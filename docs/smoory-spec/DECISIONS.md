@@ -399,6 +399,66 @@ If you ever clone this repo on a fresh machine and lose the project file, this s
 
 ---
 
+## Phase 2 milestone 2.1a — hema scaffolding decisions
+
+### Swift binding for sqlite-vec: `jkrukowski/SQLiteVec` 0.0.14
+
+**Decision:** Pin the `https://github.com/jkrukowski/SQLiteVec` Swift package at exact version `0.0.14`. This is the canonical Swift binding for `asg017/sqlite-vec` — that latter repo no longer ships Swift bindings (as of the 2.1a build, `bindings/` contains `go`, `python`, `rust` only).
+
+**Why this package:** It bundles its own SQLite via a `CSQLiteVec` C target (no system `libsqlite3` dependency, no version skew with macOS), exposes a `public actor Database` with async `execute`/`query`/`transaction` APIs, has StrictConcurrency enabled (Swift 6 ready), and supports macOS 10.15+ which covers our macOS 14 floor.
+
+**Single-maintainer dependency risk:** `jkrukowski/SQLiteVec` is a small package (~50 stars, single maintainer). If maintenance lapses, our exit path is bounded: the actual quality dependency is the underlying `asg017/sqlite-vec` C source, which is the dominant SQLite vector extension and is actively maintained. The Swift binding layer is thin (essentially: `Database` actor + `execute`/`query`/`transaction` + parameter binding). Replacing it means writing equivalent thin bindings against `asg017/sqlite-vec`'s C API directly — measured in days, not weeks. The risk is real but the blast radius is small.
+
+**Pin spec:** Exact `0.0.14`. Not `from:` — we want explicit consent to upgrade.
+
+### Vector dimension: 1024 (Voyage `voyage-3`)
+
+**Decision:** vec0 virtual tables are dimensioned `float[1024]`, matching Voyage's `voyage-3` default. The original spec called for 300-dim NLEmbedding; that decision is being reconsidered before the embedding layer ships.
+
+**Why 1024 / Voyage:** The cost difference at personal scale (~150–200 API calls/day) is negligible (~cents/month). The retrieval-quality gap between on-device 300-dim and hosted 1024-dim is meaningful enough — especially for cross-topic retrieval and multi-entity disambiguation — that paying for it is worth front-loading rather than discovering a quality issue six months in.
+
+**Swap path preserved.** The `Embedder` protocol still abstracts the embedder. NLEmbedding remains a viable fallback. Switching back changes `embedding float[1024]` → `embedding float[300]` plus re-embedding the corpus (cheap at personal scale).
+
+### Database file location
+
+**Decision:** Hema lives at `URL.applicationSupportDirectory.appendingPathComponent("Smoory/hema.sqlite")`. For the sandboxed app this resolves to `~/Library/Containers/com.assistant.Smoory/Data/Library/Application Support/Smoory/hema.sqlite`. The `Smoory/` subfolder is redundant inside the container but matches the spec literally; harmless.
+
+**Why separate from the SwiftData store:** SwiftData and sqlite-vec don't compose cleanly. Hema benefits from explicit SQL for vector queries. Two database files keep concerns separate and make hema independently inspectable, exportable, and migratable.
+
+**Sandbox:** No additional entitlement required — the app's container is automatically writable.
+
+### Migration system
+
+**Decision:** Migrations are values (`struct Migration { version, description, up }`) registered in a static array on `enum HemaSchema`. `applyPending(to:)` reads `schema_version`, filters migrations whose version is greater, and runs each in its own `db.transaction { ... }` so a failure rolls back rather than leaving the schema half-applied. Migration 1 creates `schema_version` itself plus all initial tables, vec0 virtual tables, and indexes.
+
+**Why this shape:** Adding a new migration is a single struct literal at the bottom of the array — no separate file, no class hierarchy. Versions are strictly ascending integers. Future-me always knows where to look.
+
+### Schema deviation: no `vector BLOB` columns on main tables
+
+**Decision:** The original `MEMORY.md` schema included `vector BLOB` columns on `memory_turns` and `semantic_facts` alongside the parallel `_vec` virtual tables. The 2.1a implementation drops those columns — the vec0 virtual tables ARE the storage, joined by rowid. The duplicate column was never going to be populated.
+
+**Spec sync:** `MEMORY.md` updated in the same commit to reflect this.
+
+### `is_private` column from migration 1
+
+**Decision:** The `semantic_facts` table carries `is_private INTEGER NOT NULL DEFAULT 0` from migration 1, not as a future schema change. The original spec mentioned the flag as a future implementation note; including it now is materially cheaper than retrofitting via migration 2.
+
+**Per-call privacy filtering at the `HemaService` boundary:** Retrieval excludes private facts by default (`includePrivate: false`). Callers — including the orchestrator and any future memory inspection view — must explicitly opt in to see private facts. The default is "exclude private," so a forgetful caller never accidentally leaks private facts to an LLM API. Documented in `MEMORY.md`'s privacy section.
+
+### `HemaService` is a class, not an actor
+
+**Decision:** `final class HemaService: @unchecked Sendable`. Internal serialization is delegated to `SQLiteVec.Database`, which is itself a `public actor` and serializes its own SQL execution. Adding an outer actor or DispatchQueue would be redundant.
+
+**Why class over actor at the service boundary:** Actor at the service boundary complicates injection and testing (every call site becomes async, every mock becomes an actor or a protocol-existential), and the underlying serialization story is already correct at the `Database` level.
+
+### Debug menu: top-level `Debug` rather than `View → Debug`
+
+**Decision:** Three debug commands live in a top-level `CommandMenu("Debug")` rather than nested under SwiftUI's auto-generated `View` menu. Practical equivalence; the macOS-canonical pattern is a top-level Debug menu.
+
+**Items in 2.1a:** `Dump hema state`, `Hema self-test`, `Reset hema` (with NSAlert confirmation — dev escape hatch for 2.1b/2.1c iteration).
+
+---
+
 ## Decision template (for future additions)
 
 When making a new architectural decision, document it here in this format:

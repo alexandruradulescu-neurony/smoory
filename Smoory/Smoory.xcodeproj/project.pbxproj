@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		FAB52F392FA26D3200541477 /* SQLiteVec in Frameworks */ = {isa = PBXBuildFile; productRef = FAB52F382FA26D3200541477 /* SQLiteVec */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		FA7F323A2FA2380400F94AAE /* Smoory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Smoory.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FAB52F392FA26D3200541477 /* SQLiteVec in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 			);
 			name = Smoory;
 			packageProductDependencies = (
+				FAB52F382FA26D3200541477 /* SQLiteVec */,
 			);
 			productName = Smoory;
 			productReference = FA7F323A2FA2380400F94AAE /* Smoory.app */;
@@ -107,6 +113,9 @@
 			);
 			mainGroup = FA7F32312FA2380400F94AAE;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				FAB52F372FA26D3200541477 /* XCRemoteSwiftPackageReference "SQLiteVec" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = FA7F323B2FA2380400F94AAE /* Products */;
 			projectDirPath = "";
@@ -268,7 +277,17 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 278YW247TS;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Smoory/Info.plist;
@@ -305,7 +324,17 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 278YW247TS;
 				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = NO;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = NO;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Smoory/Info.plist;
@@ -352,6 +381,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		FAB52F372FA26D3200541477 /* XCRemoteSwiftPackageReference "SQLiteVec" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jkrukowski/SQLiteVec";
+			requirement = {
+				kind = exactVersion;
+				version = 0.0.14;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FAB52F382FA26D3200541477 /* SQLiteVec */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FAB52F372FA26D3200541477 /* XCRemoteSwiftPackageReference "SQLiteVec" */;
+			productName = SQLiteVec;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = FA7F32322FA2380400F94AAE /* Project object */;
 }

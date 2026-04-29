@@ -19,7 +19,7 @@ A small set of rolling natural-language summaries. Written by Claude, regenerate
 - **Recent summary** — one paragraph (~200 words) covering the last 7 days. Regenerated daily after the day review.
 - **Today's running summary** — one paragraph (~100 words) covering today's significant events. Regenerated at end of day or when the conversation accumulates enough turns to warrant refresh.
 
-**Storage:** SwiftData entity `CompactMemory` with a `kind` enum and a `body` text field, one row per active tier, with a history of past versions kept for inspection.
+**Storage:** SQLite table `compact_memory` (in the hema database, alongside turns and facts) with `id`, `kind` (overall/recent/today), `body`, `word_count`, `generated_at`, `superseded_at` (NULL for active rows), and `generating_model`. One active row per kind; superseded rows are kept for history and inspection.
 
 ### 2. Vector Memory
 
@@ -37,10 +37,10 @@ Every significant chat turn (user and assistant) is embedded into a vector and i
 - Triage classifier inputs (high volume, low value)
 - Receipts, transactional confirmations, or any content classified as `noise` by triage
 
-**Storage:** SQLite table `memory_turns` with columns: `id`, `created_at`, `role` (user/assistant), `content`, `vector` (BLOB via sqlite-vec), `chat_session_id`, `metadata_json`.
+**Storage:** SQLite table `memory_turns` with columns: `id`, `created_at`, `chat_session_id`, `role` (user/assistant), `content`, `metadata_json`. The vector lives in a parallel `memory_turns_vec` virtual table managed by sqlite-vec, joined by rowid. There is no `vector BLOB` column on `memory_turns` itself — the vec0 virtual table is the storage.
 
 **Embeddings:**
-Apple's `NLEmbedding.sentenceEmbedding(for: .english)` is the v1 default — on-device, free, 300-dimensional. Quality is sufficient for personal-scale retrieval. Swappable to higher-quality embeddings (Voyage, OpenAI) if retrieval quality issues emerge.
+Voyage AI's `voyage-3` is the Phase 2 default — hosted, 1024-dimensional, high quality. Embeddings happen in the cloud and the resulting vectors are stored locally in sqlite-vec. The original spec called for Apple's `NLEmbedding` (300-dim, on-device, free) as the v1 default; that was reconsidered before the embedding layer was built — the per-call embedding cost at personal volume is negligible, and the retrieval-quality gap vs hosted models is meaningful enough to be worth front-loading. NLEmbedding remains available as a fallback through the `Embedder` protocol if hosted embeddings ever become problematic. Swap path documented in DECISIONS.md.
 
 ### 3. Semantic Facts
 
@@ -54,7 +54,7 @@ Discrete, structured records of things Smoory has learned. Each fact is a self-c
 - "User mentioned wanting to read 50 pages/day."
 - "User declined the offer from Bolt because timeline didn't fit."
 
-**Storage:** SQLite table `semantic_facts` with columns: `id`, `created_at`, `body` (the fact statement), `vector` (BLOB), `tags` (JSON array), `entities_referenced` (JSON: lists of person IDs, role IDs, etc.), `confidence` (Double), `provenance_json`, `expires_at` (nullable), `superseded_by` (nullable, for facts that have been replaced).
+**Storage:** SQLite table `semantic_facts` with columns: `id`, `created_at`, `body` (the fact statement), `tags_json` (JSON array of tag strings), `entities_json` (JSON list of entity references), `confidence` (REAL), `user_confirmed` (INT 0/1), `is_private` (INT 0/1, see "Privacy" below), `expires_at` (nullable), `superseded_by` (nullable, for facts that have been replaced), `provenance_json`. The vector lives in a parallel `semantic_facts_vec` virtual table managed by sqlite-vec, joined by rowid. There is no `vector BLOB` column on `semantic_facts` itself — the vec0 virtual table is the storage.
 
 **Why both vectors AND structured fields?**
 - Vectors enable fuzzy semantic retrieval ("what does Smoory know about Lisbon?")
@@ -217,47 +217,53 @@ The "why do you think this?" view in the memory inspection surface renders this 
 Hema uses SQLite directly via the `sqlite-vec` extension, separate from SwiftData. Reason: SwiftData and sqlite-vec don't compose cleanly, and hema benefits from explicit SQL for vector queries.
 
 ```sql
+-- Schema versioning (migration table — first artifact of migration 1)
+CREATE TABLE schema_version (
+  version INTEGER PRIMARY KEY,
+  applied_at TEXT NOT NULL
+);
+
 -- Compact summaries
 CREATE TABLE compact_memory (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,                    -- 'overall' | 'recent' | 'today'
   body TEXT NOT NULL,
-  word_count INT,
+  word_count INTEGER NOT NULL DEFAULT 0,
   generated_at TEXT NOT NULL,
   superseded_at TEXT,                    -- NULL if currently active
   generating_model TEXT
 );
+CREATE INDEX idx_compact_kind_active ON compact_memory(kind, superseded_at);
 
--- Conversational turns (vector + content)
+-- Conversational turns (vectors live in the parallel vec0 table, joined by rowid)
 CREATE TABLE memory_turns (
   id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
   chat_session_id TEXT NOT NULL,
   role TEXT NOT NULL,                    -- 'user' | 'assistant'
   content TEXT NOT NULL,
-  metadata_json TEXT,
-  vector BLOB                            -- managed by sqlite-vec
+  metadata_json TEXT
 );
 CREATE VIRTUAL TABLE memory_turns_vec USING vec0(
-  embedding float[300]
+  embedding float[1024]
 );
 
--- Semantic facts
+-- Semantic facts (vectors live in the parallel vec0 table, joined by rowid)
 CREATE TABLE semantic_facts (
   id TEXT PRIMARY KEY,
   body TEXT NOT NULL,
-  tags_json TEXT,
-  entities_json TEXT,                    -- list of entity references
-  confidence REAL,
-  user_confirmed INT NOT NULL DEFAULT 0,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  entities_json TEXT NOT NULL DEFAULT '[]',
+  confidence REAL NOT NULL DEFAULT 0,
+  user_confirmed INTEGER NOT NULL DEFAULT 0,
+  is_private INTEGER NOT NULL DEFAULT 0, -- per-fact private flag (see "Privacy" section)
   created_at TEXT NOT NULL,
   expires_at TEXT,
-  superseded_by TEXT,                    -- foreign key to another fact id
-  provenance_json TEXT,
-  vector BLOB
+  superseded_by TEXT,                    -- foreign-key-style pointer to another fact id
+  provenance_json TEXT
 );
 CREATE VIRTUAL TABLE semantic_facts_vec USING vec0(
-  embedding float[300]
+  embedding float[1024]
 );
 
 -- Indexes
@@ -265,6 +271,8 @@ CREATE INDEX idx_turns_session ON memory_turns(chat_session_id);
 CREATE INDEX idx_turns_created ON memory_turns(created_at);
 CREATE INDEX idx_facts_created ON semantic_facts(created_at);
 CREATE INDEX idx_facts_expires ON semantic_facts(expires_at);
+CREATE INDEX idx_facts_superseded ON semantic_facts(superseded_by);
+CREATE INDEX idx_facts_private ON semantic_facts(is_private);
 ```
 
 ---
@@ -281,7 +289,7 @@ When hema retrieves context for a Claude call, only the **subset relevant to the
 This filtering is the orchestrator's job. Each enrichment-call type has a context recipe specifying what to retrieve and what to exclude.
 
 **Sensitive markers:**
-The user can flag a memory fact as "private" — it will never be sent to Claude even if relevant. (Useful for things you'd like Smoory to remember but not actively reason about.) Implementation: add a `private` boolean to `semantic_facts`; retrieval skips private facts unless explicitly requested.
+The user can flag a memory fact as "private" — it will never be sent to Claude even if relevant. (Useful for things you'd like Smoory to remember but not actively reason about.) Implementation: the `semantic_facts` table carries an `is_private INTEGER NOT NULL DEFAULT 0` column from migration 1; retrieval skips private facts unless explicitly requested. The privacy filter is enforced inside `HemaService` (the per-call privacy filtering is implemented at the HemaService boundary, not at the orchestrator boundary, so callers never have to remember to set the flag — the default is "exclude private").
 
 ---
 
