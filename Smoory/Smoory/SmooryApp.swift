@@ -39,6 +39,7 @@ struct SmooryApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.dynamicTypeSize, .xLarge)
         }
         .modelContainer(sharedModelContainer)
         .defaultSize(width: 1100, height: 700)

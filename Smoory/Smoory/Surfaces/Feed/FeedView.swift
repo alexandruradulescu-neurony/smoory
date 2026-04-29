@@ -16,10 +16,8 @@ struct FeedView: View {
         switch viewModel.state {
         case .loading:
             ProgressView().controlSize(.small)
-        case .ready(let allDay, let timed) where allDay.isEmpty && timed.isEmpty:
-            placeholder
-        case .ready(let allDay, let timed):
-            eventList(allDay: allDay, timed: timed)
+        case .ready(let sections):
+            eventList(sections: sections)
         case .denied:
             deniedView
         case .restricted:
@@ -29,27 +27,22 @@ struct FeedView: View {
         }
     }
 
-    private var placeholder: some View {
-        VStack(spacing: 16) {
-            Image(systemName: surface.symbol)
-                .font(.system(size: 48))
-                .foregroundStyle(.tertiary)
-            Text(surface.title)
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private func eventList(allDay: [CalendarEvent], timed: [CalendarEvent]) -> some View {
+    private func eventList(sections: [FeedViewModel.DaySection]) -> some View {
         List {
-            if !allDay.isEmpty {
-                Section("All-day") {
-                    ForEach(allDay) { EventRow(event: $0) }
-                }
-            }
-            if !timed.isEmpty {
-                Section("Today") {
-                    ForEach(timed) { EventRow(event: $0) }
+            ForEach(sections) { section in
+                Section(section.header) {
+                    if section.isEmpty {
+                        Text("Nothing scheduled")
+                            .foregroundStyle(.tertiary)
+                            .font(.callout)
+                    } else {
+                        ForEach(section.allDay) { item in
+                            EventRow(item: item)
+                        }
+                        ForEach(section.timed) { item in
+                            EventRow(item: item)
+                        }
+                    }
                 }
             }
         }
@@ -110,20 +103,18 @@ struct FeedView: View {
 }
 
 private struct EventRow: View {
-    let event: CalendarEvent
+    let item: FeedViewModel.DaySection.Item
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                Text(event.isAllDay ? "All day" : timeRange)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(item.event.isAllDay ? "All day" : timeRange)
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .frame(width: 96, alignment: .leading)
-                Text(event.title)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
+                titleAndSuffix
             }
-            if let location = event.location {
+            if let location = item.event.location {
                 Text(location)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -133,9 +124,22 @@ private struct EventRow: View {
         .padding(.vertical, 2)
     }
 
+    private var titleAndSuffix: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(item.event.title)
+                .fontWeight(.medium)
+                .lineLimit(1)
+            if let suffix = item.trailingSuffix {
+                Text(suffix)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
     private var timeRange: String {
-        let s = event.start.formatted(date: .omitted, time: .shortened)
-        let e = event.end.formatted(date: .omitted, time: .shortened)
+        let s = item.event.start.formatted(date: .omitted, time: .shortened)
+        let e = item.event.end.formatted(date: .omitted, time: .shortened)
         return "\(s) – \(e)"
     }
 }
