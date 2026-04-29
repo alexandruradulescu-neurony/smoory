@@ -77,6 +77,26 @@ struct DebugCommands: Commands {
 
             Divider()
 
+            Button("Tool registry dump") {
+                print("---- TOOL REGISTRY ----")
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                for tool in ToolRegistry.allTools {
+                    print("name:        \(tool.name)")
+                    print("tier:        \(tool.confirmationTier)")
+                    print("description: \(tool.description)")
+                    if let data = try? encoder.encode(tool.inputSchema),
+                       let str = String(data: data, encoding: .utf8) {
+                        print("schema:")
+                        print(str)
+                    }
+                    print("---")
+                }
+                print("---- END ----")
+            }
+
+            Divider()
+
             Button("Reset hema") {
                 guard case .ready(let hema) = hemaState else {
                     print("[hema] Not ready — cannot reset.")

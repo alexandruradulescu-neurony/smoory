@@ -15,19 +15,36 @@ enum ModelTier: Sendable {
     case heavy
 }
 
+enum LLMContent: Sendable, Hashable {
+    case text(String)
+    case toolUse(id: String, name: String, parametersJSON: String)
+    case toolResult(toolUseId: String, content: String, isError: Bool)
+}
+
 struct LLMMessage: Sendable, Hashable {
     enum Role: String, Sendable, Hashable {
         case user
         case assistant
     }
     let role: Role
-    let content: String
+    let content: [LLMContent]
+
+    init(role: Role, content: [LLMContent]) {
+        self.role = role
+        self.content = content
+    }
+
+    /// Convenience initializer for plain-text turns — back-compat with Phase 1 call sites
+    /// that pre-date the content-block model.
+    init(role: Role, text: String) {
+        self.init(role: role, content: [.text(text)])
+    }
 }
 
 struct LLMTool: Sendable, Hashable {
     let name: String
     let description: String
-    let inputSchemaJSON: String
+    let inputSchema: ToolInputSchema
 }
 
 struct LLMToolCall: Sendable, Hashable {
@@ -37,8 +54,7 @@ struct LLMToolCall: Sendable, Hashable {
 }
 
 struct LLMResponse: Sendable {
-    let text: String
-    let toolCalls: [LLMToolCall]
+    let content: [LLMContent]
     let stopReason: StopReason
     let usage: TokenUsage
 
@@ -53,6 +69,24 @@ struct LLMResponse: Sendable {
     struct TokenUsage: Sendable, Hashable {
         let inputTokens: Int
         let outputTokens: Int
+    }
+
+    /// Concatenation of all `.text(...)` content blocks. Empty string if none.
+    var text: String {
+        content.compactMap {
+            if case let .text(t) = $0 { return t }
+            return nil
+        }.joined()
+    }
+
+    /// Extracts every `.toolUse(...)` content block as an LLMToolCall.
+    var toolCalls: [LLMToolCall] {
+        content.compactMap {
+            if case let .toolUse(id, name, parametersJSON) = $0 {
+                return LLMToolCall(id: id, toolName: name, parametersJSON: parametersJSON)
+            }
+            return nil
+        }
     }
 }
 

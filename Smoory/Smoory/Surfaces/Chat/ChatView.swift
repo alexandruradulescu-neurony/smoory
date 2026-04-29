@@ -1,9 +1,23 @@
+import SwiftData
 import SwiftUI
 
 struct ChatView: View {
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        // Wrapper so the inner view's @State can be initialized with the env-provided container.
+        ChatViewContent(modelContainer: modelContext.container)
+    }
+}
+
+private struct ChatViewContent: View {
     private let surface: Surface = .chat
-    @State private var viewModel = ChatViewModel()
+    @State private var viewModel: ChatViewModel
     @FocusState private var isInputFocused: Bool
+
+    init(modelContainer: ModelContainer) {
+        _viewModel = State(wrappedValue: ChatViewModel(modelContainer: modelContainer))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -86,6 +100,20 @@ private struct TurnBubble: View {
     let turn: ChatViewModel.Turn
 
     var body: some View {
+        if turn.speaker == .assistant, let names = turn.usedToolNames, !names.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                bubbleRow
+                Text("Used: \(names.joined(separator: ", "))")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .padding(.leading, 12)
+            }
+        } else {
+            bubbleRow
+        }
+    }
+
+    private var bubbleRow: some View {
         HStack(alignment: .top) {
             if turn.speaker == .user { Spacer(minLength: 40) }
             content

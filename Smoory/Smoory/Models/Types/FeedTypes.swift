@@ -20,6 +20,7 @@ enum ConfirmationTier: Int, Codable, Sendable {
     case tier1Quick = 0
     case tier2Review = 1
     case tier3Dialog = 2
+    case silent = 3
 }
 
 enum FeedItemState: Int, Codable, Sendable {

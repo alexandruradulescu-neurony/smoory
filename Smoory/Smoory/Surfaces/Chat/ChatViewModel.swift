@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftData
 
 @Observable
 @MainActor
@@ -9,6 +10,7 @@ final class ChatViewModel {
         let id: UUID
         let speaker: Speaker
         let text: String
+        let usedToolNames: [String]?     // dedup'd, only set on assistant turns that called tools
     }
 
     enum TurnState: Sendable, Hashable {
@@ -20,56 +22,97 @@ final class ChatViewModel {
     private(set) var state: TurnState = .idle
     var draft: String = ""
 
-    private let client: LLMClient
+    private let orchestrator: Orchestrator
+    private let chatSessionID = UUID()
     private let systemPrompt = """
 You are Smoory, a helpful assistant running on the user's Mac. This is a Phase 1 development build — no memory, no tools, no structured context yet. Be conversational, concise, and honest that you don't yet have the full Smoory features wired up.
+
+You have tools available to read the user's calendar, goals, and todos. Use them when relevant. Don't narrate that you're using tools — just use them and answer.
 """
 
-    init(client: LLMClient = AnthropicClient()) {
-        self.client = client
+    init(
+        modelContainer: ModelContainer,
+        client: LLMClient = AnthropicClient(),
+        calendarService: CalendarService = CalendarService()
+    ) {
+        let services = ToolServices(
+            calendarService: calendarService,
+            modelContainer: modelContainer
+        )
+        self.orchestrator = Orchestrator(
+            client: client,
+            registry: ToolRegistry.allTools,
+            services: services,
+            chatSessionID: chatSessionID
+        )
     }
 
     func send() async {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, state != .sending else { return }
 
-        let userTurn = Turn(id: UUID(), speaker: .user, text: trimmed)
+        let userTurn = Turn(id: UUID(), speaker: .user, text: trimmed, usedToolNames: nil)
         turns.append(userTurn)
         draft = ""
         state = .sending
 
-        let history = Self.buildHistory(from: turns)
+        // Build history from prior turns. Filter out errorBubbles so a transient error doesn't
+        // poison the next request. Exclude the just-appended userTurn — orchestrator.send takes
+        // userMessage separately.
+        let history: [LLMMessage] = turns
+            .filter { $0.speaker != .errorBubble && $0.id != userTurn.id }
+            .map { turn in
+                let role: LLMMessage.Role = (turn.speaker == .user) ? .user : .assistant
+                return LLMMessage(role: role, text: turn.text)
+            }
 
         do {
-            let response = try await client.complete(
-                model: .balanced,
+            let result = try await orchestrator.send(
                 systemPrompt: systemPrompt,
-                messages: history,
-                tools: nil
+                history: history,
+                userMessage: trimmed,
+                modelTier: .balanced
             )
-            turns.append(Turn(id: UUID(), speaker: .assistant, text: response.text))
+
+            switch result.stoppedReason {
+            case .naturalEnd, .maxRoundsReached:
+                let usedNames = Self.deduplicate(result.toolExchanges.map(\.toolName))
+                let displayText = result.finalText.isEmpty ? "(empty response)" : result.finalText
+                turns.append(Turn(
+                    id: UUID(),
+                    speaker: .assistant,
+                    text: displayText,
+                    usedToolNames: usedNames.isEmpty ? nil : usedNames
+                ))
+            case .clientError(let error):
+                turns.append(Turn(
+                    id: UUID(),
+                    speaker: .errorBubble,
+                    text: Self.friendlyMessage(for: error),
+                    usedToolNames: nil
+                ))
+            case .toolError(let str):
+                turns.append(Turn(
+                    id: UUID(),
+                    speaker: .errorBubble,
+                    text: "Tool execution failed: \(str)",
+                    usedToolNames: nil
+                ))
+            }
         } catch {
-            turns.append(Turn(id: UUID(), speaker: .errorBubble, text: Self.friendlyMessage(for: error)))
+            turns.append(Turn(
+                id: UUID(),
+                speaker: .errorBubble,
+                text: Self.friendlyMessage(for: error),
+                usedToolNames: nil
+            ))
         }
         state = .idle
     }
 
-    /// Build the API-shape history from UI turns. Filters out error bubbles
-    /// (UI-only) and collapses any consecutive same-role messages into the
-    /// most recent — Anthropic requires strict user/assistant alternation
-    /// and a failed turn leaves the history with two user messages in a row.
-    private static func buildHistory(from turns: [Turn]) -> [LLMMessage] {
-        var history: [LLMMessage] = []
-        for turn in turns where turn.speaker != .errorBubble {
-            let role: LLMMessage.Role = (turn.speaker == .user) ? .user : .assistant
-            let message = LLMMessage(role: role, content: turn.text)
-            if history.last?.role == role {
-                history[history.count - 1] = message
-            } else {
-                history.append(message)
-            }
-        }
-        return history
+    private static func deduplicate(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        return names.filter { seen.insert($0).inserted }
     }
 
     private static func friendlyMessage(for error: Error) -> String {
