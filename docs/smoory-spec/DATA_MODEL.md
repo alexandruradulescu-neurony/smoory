@@ -23,7 +23,7 @@ A facet of the user's life. The user has a small fixed number of these (typicall
 **Fields:**
 - `name: String` — e.g. "Employed at Acme", "Smoory (own business)", "Freelance"
 - `slug: String` — short identifier, e.g. "work", "biz", "freelance"
-- `description: String` — paragraph the user writes describing the role
+- `details: String` — paragraph the user writes describing the role
 - `colorHex: String` — for UI tagging
 - `workingHours: WorkingHours?` — optional struct: weekday ranges, e.g. Mon-Fri 9-17 for Employed
 - `priorityWeight: Double` — default 1.0, user-tunable; affects feed prioritization
@@ -49,7 +49,7 @@ A long-lived intention. Goals are the lens through which Smoory interprets activ
 **Fields:**
 - `role: Role?` — goals usually belong to a role; allow role-less for personal/cross-cutting goals
 - `title: String` — "Read 50 pages/day", "Ship Smoory v1 by July", "Be a more present partner"
-- `description: String` — paragraph context
+- `details: String` — paragraph context
 - `goalType: GoalType` — enum: `.tracked`, `.reflective`, `.both`
 - `trackedSignal: TrackedSignal?` — present if `goalType` is `.tracked` or `.both`
 - `reflectiveCadence: ReflectiveCadence?` — present if `goalType` is `.reflective` or `.both`
@@ -98,7 +98,7 @@ A concrete, bounded effort that moves a goal forward. Medium-lived (weeks to mon
 - `role: Role?`
 - `parentGoal: Goal?`
 - `title: String` — "Smoory v1", "Half-marathon training plan"
-- `description: String`
+- `details: String`
 - `status: ProjectStatus` — `.planning, .active, .paused, .completed, .abandoned`
 - `targetDate: Date?`
 - `completedAt: Date?`
@@ -196,7 +196,7 @@ A person Smoory tracks. References a corresponding Apple Contacts record. The ri
 - `primaryEmail: String?`
 - `emails: [String]` — all known emails
 - `company: String?`
-- `title: String?`
+- `jobTitle: String?`
 - `roles: [Role]` — which Smoory-roles this person sits under (work colleague, client, friend)
 - `relationship: String` — short label: "client", "colleague", "friend", "vendor", "candidate"
 - `howWeMet: String?` — short note
@@ -376,7 +376,7 @@ A learned preference Smoory has proposed and the user has confirmed. Visible and
 
 **Fields:**
 - `kind: RuleKind` — `.auto_archive_sender, .auto_archive_pattern, .priority_boost, .priority_demote, .never_propose`
-- `description: String` — human-readable
+- `details: String` — human-readable
 - `pattern: String` — the criterion (sender pattern, subject regex, etc.)
 - `weight: Double` — for priority boost/demote
 - `confirmed: Bool` — true if user accepted; false for proposed-but-pending
@@ -418,6 +418,8 @@ FeedItem ──── (references many)
 ChatMessage ──── (feeds Hema)
 RuleAdjustment ──── (orthogonal, governs feed behavior)
 ```
+
+**Implementation note on inverse relationships.** SwiftData requires an explicit inverse back-reference on the child (many) side of every bidirectional relationship. These inverses (e.g. `CaptureItem.pinnedToProject` as the inverse of `Project.notes`, `CaptureItem.attachedToMessage` as the inverse of `ChatMessage.attachments`) are added in code as a framework requirement, not as semantic additions to this schema. The conceptual relationship intent is what this document specifies; the inverse property names follow `parentX` / `pinnedToX` / `attachedToX` conventions and are documented alongside the model definitions in `Smoory/Smoory/Models/`.
 
 ---
 

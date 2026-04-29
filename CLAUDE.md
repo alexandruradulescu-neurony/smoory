@@ -27,6 +27,11 @@ For any task, read the relevant spec docs first:
    - No @Attribute(.unique) — use UUIDs as identifiers
    - Default values on all non-optional properties
    - Enums stored as Int raw values
+   - When a to-many relationship is declared, the inverse to-one
+     back-reference is added on the child side per SwiftData
+     requirements. These inverses are implementation details, not
+     spec deviations. Use [X] = [] for to-many (non-optional),
+     X? for to-one (optional).
 
 4. Min OS is macOS 14 (Sonoma). Don't use APIs that require newer.
 

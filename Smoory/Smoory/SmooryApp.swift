@@ -12,7 +12,20 @@ import SwiftData
 struct SmooryApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            Role.self,
+            Goal.self,
+            Project.self,
+            Thread.self,
+            Todo.self,
+            Habit.self,
+            Person.self,
+            Profile.self,
+            Infrastructure.self,
+            CaptureItem.self,
+            FeedItem.self,
+            ChatMessage.self,
+            Schedule.self,
+            RuleAdjustment.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

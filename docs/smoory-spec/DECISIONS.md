@@ -282,6 +282,123 @@ The medium widget gets the daily focus card. Open: what do small and large varia
 
 ---
 
+## Phase 1 model implementation decisions
+
+These choices govern how the SwiftData `@Model` definitions in `Smoory/Smoory/Models/` are written for milestone 1.1. They sit alongside the CloudKit-compatibility rules in `CLAUDE.md` (relationships optional where applicable, no `@Attribute(.unique)`, defaults on every non-optional property, Int-backed enums, macOS 14 floor).
+
+### 1. Hema models deferred to Phase 2
+
+**Decision:** Do not create SwiftData `@Model`s for `CompactMemory`, `MemoryTurn`, `SemanticFact`, or `MemoryProvenance` in milestone 1.1.
+
+**Reason:** `MEMORY.md` describes hema as a separate SQLite database with the `sqlite-vec` extension, not as SwiftData. Hema has its own data layer that will be built in Phase 2. Modeling these as SwiftData entities now would produce dead code and a schema we'd throw away.
+
+### 2. Folder layout: flat `Models/` plus `Models/Types/`
+
+**Decision:** All entity `@Model` files live directly under `Smoory/Smoory/Models/`. All value-type structs and enums live under `Smoory/Smoory/Models/Types/`.
+
+**Reason:** With ~14 entities the flat layout stays scannable. Subfolders by domain (Core/Feed/Memory) add navigation overhead without payoff at this size. Refactor if it grows unwieldy.
+
+### 3. Value types as Codable struct attributes
+
+**Decision:** Value types — `WorkingHours`, `TrackedSignal`, `ReflectiveCadence`, `ToneProfile`, `ToneOverride`, `ProposedAction`, `EntityReference`, `FeedItemProvenance`, `CaptureLink`, `ToolCall`, `ToolResult`, `EmailReference`, `ThreadEvent`, `TimeOfDay` — are declared as `Codable` structs and used directly as SwiftData attributes (including arrays of them).
+
+**Reason:** macOS 14 SwiftData supports Codable structs as attributes natively. This preserves type safety, avoids hand-rolled JSON serialization, and keeps model code readable. JSON-string serialization is reserved for cases where a typed struct cannot represent the data cleanly (see decision 5).
+
+### 4. Primitive arrays used directly
+
+**Decision:** `[String]`, `[UUID]`, and arrays of Int-backed enums (e.g. `[Weekday]`) are used as native SwiftData attributes. No wrapping, no JSON encoding.
+
+**Reason:** SwiftData on macOS 14 supports primitive-array attributes natively. CloudKit's `CKRecord` supports array values for its primitive types. If a CloudKit migration ever exposes an edge case for a specific array, address it then.
+
+### 5. `ProposedAction.parameters` stored as JSON string
+
+**Decision:** `ProposedAction` carries `parametersJSON: String` rather than a typed parameter struct. The same shape applies inside `ToolCall.parametersJSON` and `ToolResult.resultJSON`.
+
+**Reason:** Tool call parameters are heterogeneous — different shape per tool. A typed struct doesn't fit. JSON string is the lightweight option. A typed-decode helper will be added in Phase 2 when tools actually run.
+
+### 6. `ChatMessage.toolCalls` and `toolResults` minimal shape
+
+**Decision:** Define now as Codable structs in `Models/Types/ChatTypes.swift`:
+
+```swift
+struct ToolCall: Codable {
+    let id: String              // matches Anthropic's tool_use_id
+    let toolName: String
+    let parametersJSON: String
+}
+
+struct ToolResult: Codable {
+    let toolCallId: String
+    let resultJSON: String
+    let isError: Bool
+}
+```
+
+**Reason:** `ChatMessage` holds `[ToolCall]` and `[ToolResult]`, so the shape must exist now. Fields will be fleshed out in Phase 2 when tools actually run.
+
+### 7. `Profile` singleton via `fetchOrCreate` helper
+
+**Decision:** Do not use `@Attribute(.unique)` on `Profile.id` (CloudKit-incompatible per `CLAUDE.md`). Instead, expose:
+
+```swift
+static func fetchOrCreate(in context: ModelContext) -> Profile
+```
+
+Always go through this helper rather than instantiating `Profile()` elsewhere. The helper fetches the first existing record or creates one if none exists.
+
+**Reason:** Singleton enforcement moves from a database constraint (forbidden by CloudKit-compat rules) to a code convention.
+
+### 8. `Thread` entity name shadows `Foundation.Thread`
+
+**Decision:** Name the SwiftData entity `Thread` despite the symbol conflict with `Foundation.Thread`. Within the Smoory module, the entity wins; refer to Foundation's thread type as `Foundation.Thread` if it is ever needed.
+
+**Reason:** The spec consistently uses "Thread" for this entity. Modern Swift concurrency uses `Task` and async-await, not `Foundation.Thread`, so the shadowing has near-zero practical cost. Renaming the entity (e.g. to `WorkThread`) would diverge from the spec without payoff.
+
+### 9. Spec `description` fields renamed to `details`
+
+**Decision:** Where `DATA_MODEL.md` specifies a `description: String` field (Role, Goal, Project, RuleAdjustment), the Swift property is named `details` to avoid implicit collision with `CustomStringConvertible.description`.
+
+**Reason:** Avoids accidental override-warnings and reader confusion. Localized rename, not a semantic change. Inline comments mark each rename in the model files.
+
+### 10. SwiftData inverse back-references added where the spec lists only one side
+
+**Decision:** Where the spec lists a relationship from one side only, the matching back-reference is added on the other side under the conventions `parentX` / `pinnedToX` / `attachedToX`. Concretely:
+
+- `CaptureItem.pinnedToProject: Project?` (inverse of `Project.notes`)
+- `CaptureItem.attachedToMessage: ChatMessage?` (inverse of `ChatMessage.attachments`)
+
+`@Relationship(inverse:)` is declared on the to-many side.
+
+**Reason:** SwiftData binds bidirectional relationships reliably when the inverse is declared explicitly. The spec's relationship intent is preserved; only the symmetric back-reference is added for the framework's benefit.
+
+### Convention notes (not separate decisions)
+
+- **To-one relationships are optional** (`Role?`, `Project?`, etc.). **To-many relationships are non-optional with a `[]` default**. The CloudKit-compat rule in `CLAUDE.md` is satisfied: the meaningful "optional" case for CloudKit is to-one, and an empty to-many array is the natural representation of "no items."
+- **`Person.title` (job title) is renamed to `jobTitle`** to disambiguate from the `title` field used on Goal / Project / Thread / Habit / Todo.
+- All UUID `id` fields default to `UUID()` at init. No `@Attribute(.unique)` is used; UUID collision resistance is the primary identity guarantee.
+
+---
+
+## Default Actor Isolation: nonisolated (project setting)
+
+**Decision:** The project's Default Actor Isolation build setting is explicitly set to `nonisolated` (not Xcode's default `MainActor`).
+
+**Why:** Xcode 26 / Swift 6.2 changed the default actor isolation for new app projects to MainActor, which causes every type and extension to implicitly inherit `@MainActor`. This conflicts with SwiftData's nonisolated storage code path — Codable conformances on attribute value types fail to satisfy SwiftData's actor requirements, producing "Main actor-isolated conformance cannot be used in nonisolated context" warnings (errors in Swift 6 language mode).
+
+More fundamentally: Smoory's architecture explicitly wants pipeline work (sensors, triage, enrichment, structuring layer, hema retrieval, tool execution) to run off the main actor to keep the UI responsive. A MainActor-by-default project would force every service to opt out explicitly, which is verbose and error-prone.
+
+**With nonisolated default:**
+- Models, value types, and services run wherever appropriate.
+- `@MainActor` is added explicitly where needed: view-models that publish UI state, anything that touches `NSWindow` / `NSEvent` directly.
+- SwiftUI views still get `@MainActor` from the `View` protocol itself.
+- SwiftData `@Model` classes work correctly across actor boundaries (which is what they're designed for).
+
+**Where this lives:** Build Settings → Smoory target → Default Actor Isolation → nonisolated.
+
+If you ever clone this repo on a fresh machine and lose the project file, this setting must be re-applied or the same warnings return.
+
+---
+
 ## Decision template (for future additions)
 
 When making a new architectural decision, document it here in this format:
