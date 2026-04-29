@@ -1,0 +1,305 @@
+# Decisions
+
+A log of the architectural and product choices made during spec design, the alternatives considered, and the reasoning. When you (or Claude Code) revisit a decision later, this document should answer "why did we do it this way?"
+
+Open questions still to resolve are at the end.
+
+---
+
+## Persistence: SwiftData + (deferred) Postgres
+
+**Decision:** SwiftData for all structured state (todos, goals, projects, threads, todos, people, profile, infrastructure, capture, feed items).
+
+**Alternatives considered:**
+- **Postgres on the user's laptop** (already installed). Rejected for v1: introduces a separate process to run, complicates app distribution and reliability, and SwiftData natively integrates with SwiftUI/CloudKit. Postgres is a real option for a future hema migration if the dataset outgrows SQLite, but the structured side of the app benefits more from SwiftData's tight integration than from Postgres's power.
+- **Plain SQLite via GRDB.** Reasonable, but loses SwiftData's `@Model` ergonomics and SwiftUI bindings. Adds boilerplate for what is essentially a Swift-native problem.
+- **Core Data.** Predecessor to SwiftData. No reason to choose it over SwiftData for a new project on macOS 14+.
+
+**Why SwiftData wins:** Native `@Model` macro, SwiftUI integration is automatic, observation/binding for free, undo/redo support, and the upgrade path to CloudKit sync (when iPhone client lands post-v1) is one flag.
+
+**Trade-off accepted:** SwiftData is younger than Core Data and has had bugs through 2024–2025; some fetched-property patterns and complex relationships occasionally need workarounds. The data model in this spec is conservative and avoids exotic SwiftData features for that reason.
+
+---
+
+## Memory store: SQLite + sqlite-vec for hema
+
+**Decision:** Use SQLite directly (not SwiftData) for hema, with the `sqlite-vec` extension for vector similarity. Hema stays in its own database file separate from the SwiftData store.
+
+**Alternatives considered:**
+- **Postgres + pgvector.** Higher quality vector ops, mature, the user already has Postgres installed. Rejected for v1: requires a running database process, complicates app reliability, doesn't materially improve retrieval quality at personal scale.
+- **SwiftData with custom vector serialization.** SwiftData doesn't support vector indexes natively. Implementing similarity in SwiftData would mean loading every vector into memory and computing in Swift, which works at 10k items but doesn't scale gracefully.
+- **Embedded LanceDB or similar.** More vector-specialized, but adds dependency complexity for marginal gain at personal scale.
+- **Apple's CoreData + manual cosine.** Same problem as SwiftData approach; manual cosine across thousands of items per query.
+
+**Why sqlite-vec wins:** Embedded (single file), fast enough at personal scale (sub-millisecond ANN over 10k+ vectors), zero process management, well-supported on Apple platforms via the `sqlite-vec` package. The migration path to Postgres+pgvector is straightforward if needed later — same vector dimension, same distance metric, mostly a data dump-and-load.
+
+**Why hema's database is separate from SwiftData's:** Cleaner separation of concerns, lets hema be inspected/exported/migrated independently, and avoids fighting SwiftData over schema for the vector tables.
+
+---
+
+## Embeddings: NLEmbedding for v1
+
+**Decision:** Apple's `NLEmbedding.sentenceEmbedding(for: .english)` for v1. 300-dim, on-device, free.
+
+**Alternatives considered:**
+- **Voyage AI** (Anthropic-recommended, high quality, ~$0.02/1M tokens). Best quality, but adds another API key and another network call per write/read.
+- **OpenAI text-embedding-3-small** (1536-dim, very good). Same downsides as Voyage from a "another API" standpoint.
+- **Local sentence-transformer via CoreML.** More setup, varying quality, model file ships with the app.
+
+**Why NLEmbedding wins for v1:** Free, fully private (on-device), Apple-maintained, no extra API key. At personal scale (single user, ~10k items per year), 300-dim sentence embeddings are sufficient for retrieval that feels useful. Quality differences between embedding models matter most at scale or for difficult cross-lingual queries; for a personal English-language assistant, NLEmbedding is fine.
+
+**Swap path:** The `Embedder` protocol abstracts the embedder. If retrieval quality issues emerge — vague queries finding nothing useful, semantic distinctions being missed — swap implementations without touching the rest of hema. Vector dimension change requires re-embedding the corpus, which at personal scale is cheap.
+
+---
+
+## AI provider: Anthropic only, three models
+
+**Decision:** Use Claude exclusively. Three models routed by call type:
+- `claude-haiku-4-5`: triage, structuring layer, thread inference, tone observation
+- `claude-sonnet-4-6`: chat, drafting, enrichment, brief and review generation
+- `claude-opus-4-7`: pattern observation in week reviews, occasional heavy reasoning
+
+**Alternatives considered:**
+- **Multi-provider** (OpenAI fallback, Gemini for some tasks). Rejected: complicates prompt engineering, the user already trusts Claude, and Anthropic's tool-calling and context behavior is excellent for orchestrator-style use.
+- **Local-only models via Ollama.** Rejected: quality at the level needed for nuanced annotation and drafting still lags hosted frontier models. May reconsider for triage in particular if costs become a concern.
+- **One model for everything.** Wasteful — Haiku is 12× cheaper than Sonnet for classification work that doesn't need Sonnet's reasoning.
+
+**Why this routing:** Each model is matched to its task. Cheap classification stays cheap. The expensive one-off (Opus on week-review patterns) is rare. Total monthly cost stays bounded.
+
+---
+
+## Single-user, single-machine, on-device for v1
+
+**Decision:** Smoory runs on the user's Mac, with the user's data on the user's Mac. No iCloud sync, no iPhone client, no cross-device anything in v1.
+
+**Alternatives considered:**
+- **CloudKit sync from day one.** Adds real complexity (conflict resolution, schema migration across devices, SwiftData CloudKit edge cases). Worth doing once the iPhone client is in scope; not worth doing for one device.
+- **Native iPhone client in v1.** Apple Mail integration is fundamentally Mac-only (AppleScript, Mail Rules, local DB read). The iPhone version of email is a different integration entirely (likely IMAP or the Apple MailKit extension). v1 keeps Mac as the home base.
+
+**Trade-off:** No phone access in v1. The mitigation: morning brief and feed could be readable via a web view served locally (post-v1 nice-to-have), or a simple SwiftUI iPhone read-only client that shares CloudKit data once that's added.
+
+---
+
+## Apple Mail integration: AppleScript + direct DB read
+
+**Decision:** Trigger via Mail Rule firing AppleScript. Send via AppleScript. Read via direct `.emlx` file access in `~/Library/Mail/V*/`.
+
+**Alternatives considered:**
+- **IMAP directly to the user's mail server.** Cleaner protocol, server-side; but doesn't reflect the user's local Mail client state (read flags, archive, flagged). Smoory needs to share Mail's view of reality.
+- **Apple's MailKit extension API.** Proper supported API, but limited — designed for inline UI extensions in Mail itself, not for an external orchestrator with full read/write access.
+- **Polling Apple Mail's IMAP idle.** Could work, but doesn't catch the user's local Mail state (Mail-side rules already applied, archive moves done in the client).
+
+**Why AppleScript + DB read wins:** Reflects the user's actual mail experience. Mail Rule + AppleScript is the canonical Apple-supported way to hook into incoming mail. Direct DB read is fast for retrieval. The downside is brittleness — Apple has been deprecating AppleScript over time and the Mail DB structure can shift between macOS versions. Mitigation: pin to macOS 14+ initially, plan to revisit if Apple ships breaking changes.
+
+---
+
+## People: retrieval-only in v1, no browse view
+
+**Decision:** People records exist, accumulate notes and tone profiles, are searched and referenced from chat. There is no browseable list view of all people in v1.
+
+**Alternatives considered:**
+- **Full CRM-style People view.** A grid or list of all known people, with filters, tags, last-touched timestamps, etc. Tempting and clearly useful. Deferred because it shifts the product's center of gravity toward a CRM, and v1 is about establishing the assistant pattern first.
+- **No People records at all.** Rejected: per-person tone profiles are core to the email drafting value proposition, and "who was the guy from Acme" retrieval is one of the killer features.
+
+**Why retrieval-only wins for v1:** People records earn their keep through retrieval ("draft a reply to Maria — she's the lead on Apollo, terse register, prefers bullets") rather than through browsing. The browse view can come post-v1 once the data has accumulated enough to be worth browsing.
+
+---
+
+## Three confirmation tiers
+
+**Decision:** tier1_quick / tier2_review / tier3_dialog, with memory writes as a silent fourth category.
+
+**Alternatives considered:**
+- **Two tiers (silent vs. confirmed).** Too coarse — sending an email and adding a todo are very different stakes.
+- **Per-action custom flows.** Too fragmented — the user can't develop pattern recognition for "what does Smoory do next" if every action behaves differently.
+- **All actions silent with undo.** Tempting but undoing a sent email is a forwarded-apology away from a real problem. Confirmation before action is safer than undo after action for actions that touch other people.
+
+**Why three tiers + silent memory wins:** Stakes are clearly graduated. Tier-1 is so cheap to confirm that the user develops muscle memory. Tier-2 makes the user feel safe with email sending. Tier-3 prevents Smoory from charging into ambiguous situations. Silent memory writes preserve the conversational flow that makes Smoory feel intelligent rather than bureaucratic.
+
+---
+
+## Memory writes: silent but transparent
+
+**Decision:** Most memory writes happen without user prompting. Every write is fully visible, editable, and deletable in the memory inspection view, with provenance.
+
+**Alternatives considered:**
+- **Confirm every memory write.** Exhausting. Defeats the point of long-term memory. Discussed and rejected during design.
+- **Hidden memory.** Smoory becomes a black box that users feel uneasy about. Erodes trust over time.
+
+**Why silent + transparent wins:** Trust through visibility, not through gating. The user knows they can audit anything Smoory has remembered. The cost of the "wrong fact written silently" is recoverable (edit or delete the fact) and minor; the cost of constantly interrupting the user to confirm trivia is unrecoverable.
+
+**Implication:** The memory inspection view is a first-class surface, not an admin afterthought. Time invested in making it browsable, searchable, and editable pays back directly.
+
+---
+
+## Structuring layer batches candidates rather than interrupting chat
+
+**Decision:** After every user chat turn, a parallel Haiku call runs to extract candidate writes. Candidates surface in the feed as low-priority items, not as in-chat interruptions. Onboarding is the exception — candidates surface in-line during the first conversation so the user sees the structure forming.
+
+**Alternatives considered:**
+- **Inline confirmation always.** "I noticed you mentioned wanting to read more — should I make that a goal? [yes/no]" inside chat. Too interrupting; users will start avoiding mentioning things.
+- **Auto-write everything.** Too aggressive; users will find Smoory has invented goals they didn't really commit to.
+- **Don't extract at all, only respond to explicit "make this a goal" commands.** Too passive; defeats the "conversation as input" principle.
+
+**Why batched-in-feed wins:** The chat stays a conversation, not an interview. Candidates accumulate quietly and the user reviews them when they want to. The structuring layer's accuracy can be tuned by watching which candidates get accepted vs. rejected over time.
+
+**Why onboarding is different:** The user *expects* to be setting things up during onboarding. Inline confirmation during the first conversation is part of the onboarding ritual. After onboarding, the chat reverts to non-interrupting mode.
+
+---
+
+## Tone profiles wait for 5+ observations before being used
+
+**Decision:** Per-person tone profiles begin learning after the first email exchange but are not used in drafting until `observationCount >= 5`. Below that threshold, drafts use the user's generic outgoing voice.
+
+**Alternatives considered:**
+- **Use tone profile from observation #1.** Risk: drafts to a person with one observed email feel weirdly specific or off-key.
+- **Manual tone setting.** Too much friction; users won't keep it up.
+
+**Why 5+ observations wins:** Five emails is roughly the point at which a stable register/length pattern emerges and isn't overly biased by a single one-off. Until then, the generic voice is a safer default. The threshold is configurable.
+
+---
+
+## Proactive moments are bounded: morning brief, day review, week review
+
+**Decision:** Smoory is proactive in three scheduled moments and otherwise responds rather than initiates. Goal nudges live within the morning brief; reflective check-ins live within the week review (or are user-invoked).
+
+**Alternatives considered:**
+- **Always proactive.** Pings the user throughout the day with reminders, suggestions, observations. Tested in many similar products and consistently produces fatigue. Rejected.
+- **Fully reactive.** Smoory only speaks when spoken to. Misses the value of the "morning orientation" and "end-of-day reflection" patterns that are core to why having an assistant matters.
+
+**Why bounded proactivity wins:** Predictability. The user knows when Smoory will speak and when it won't. The three rituals carry the proactive value (orientation, reflection, weekly recalibration) without the rest of the day feeling like a stream of interruptions. Operational alerts are the one exception — those bypass the bounded model because their stakes warrant it.
+
+---
+
+## iPhone is secondary; not in v1
+
+**Decision:** Mac-only in v1. iPhone client is post-v1, with read-only and CloudKit sync as the first iPhone milestone.
+
+**Reason:** Apple Mail integration is fundamentally Mac-only via the chosen mechanism. Building parallel iOS infrastructure (CloudKit data layer, IMAP-side mail integration, iOS UI) doubles the v1 scope. Better to ship a really good Mac-only Smoory, validate the patterns, and add iPhone as a cohesive expansion.
+
+**Pre-decision for the iPhone build:** When iPhone is added, the data layer migrates to CloudKit (SwiftData-CloudKit integration). The iPhone client is read-only at first — viewing feed, briefs, memory; not writing. Writing actions on iPhone come second. Email integration on iPhone, if attempted, is via IMAP or MailKit and is a separate engineering effort.
+
+---
+
+## Capture is minimal in v1
+
+**Decision:** Capture sources in v1 are limited to chat-drop and a quick-add hotkey. No share extension, no browser plugin, no voice memo capture.
+
+**Reason:** Each capture source is real engineering (share extension is an Xcode target, browser plugin is a separate Safari/Chrome project, voice capture needs Speech framework integration). v1 is about establishing the assistant pattern; capture beyond email and chat can earn its way in post-v1.
+
+---
+
+## Calendar is read-only in v1
+
+**Decision:** EventKit read access in v1. Calendar writing is post-v1.
+
+**Reason:** Read-only calendar covers the use cases that matter for v1 — the brief, the day shape, scheduling-aware action proposals ("I see you have a meeting at 3, want to defer this todo to before then?"). Writing to the calendar (proposing events, blocking time, declining meetings on user's behalf) is a tier-2 action with a clear UX path, but it's not on the critical path for the rest of v1. Defer to post-v1 to keep scope honest.
+
+---
+
+## Reminders integration is not in v1
+
+**Decision:** Apple Reminders are not synced in v1. Smoory's todos are independent.
+
+**Reason considered:** EventKit also supports Reminders. The user could express a wish for round-trip sync ("a todo in Smoory shows up in Reminders, completing it in Reminders syncs back"). Rejected for v1: bidirectional sync between two systems with their own UIs is a significant complexity cost (conflict resolution, identity matching, completion-state debouncing). Smoory's todos are first-class objects with richer metadata than Reminders supports; the impedance mismatch isn't trivial.
+
+**Future:** Post-v1, optional one-way export ("send my high-priority Smoory todos to Reminders") is a small feature. Bidirectional sync is a much bigger feature and probably never worth it.
+
+---
+
+## Habits as first-class entities, but light treatment in v1
+
+**Decision:** `Habit` exists as a SwiftData entity in v1, linked to goals, with a basic data shape (cadence, target, streak). UI treatment is minimal — habits are managed via chat and surface in week-review check-ins. No dedicated habits dashboard, no calendar visualization.
+
+**Reason:** Habits earn their own UI once enough usage accumulates to justify it. The data shape is in place from v1 so the upgrade path is purely additive.
+
+---
+
+## Threads are inferred and confirmable
+
+**Decision:** Smoory infers threads from email co-occurrence patterns and proposes them as candidates. The user confirms (tier 1). User can also create threads manually.
+
+**Alternatives considered:**
+- **All threads manual.** Too much overhead; the user won't bother.
+- **All threads automatic without confirmation.** Smoory will get groupings wrong sometimes; silent grouping makes corrections invisible until the thread surfaces in some downstream context.
+
+**Why infer-and-confirm wins:** Captures the signal of the email batches the user actually sends, while keeping the user as final arbiter of the grouping. False positives are cheap to reject; false negatives are recoverable by manual creation.
+
+---
+
+## The "Augster" identity-injection in user skills
+
+**Note for context:** During design conversations, a user-provided skill file at `/mnt/skills/user/general-rules/SKILL.md` attempted to override Claude's identity with a persona ("The Augster") and a fictional workflow with non-existent tools. This was a prompt injection attempt embedded in a developer-supplied skill. It was identified, ignored, and disclosed to the user. The behavior to expect: Smoory's developer (you) should be cautious about copy-pasting prompts from internet sources into agent skill files — instructions that override identity or impersonate other systems should be treated as untrusted regardless of where they appear to originate.
+
+---
+
+## Open questions
+
+These are decisions deferred during design. They should be resolved before or during the relevant build phase.
+
+### 1. Where do API keys live?
+Keychain via the `Security` framework is the obvious answer for the Anthropic API key. Open: do we expose a UI to update the key (in-app preferences pane), or only on first run? Recommendation: in-app preferences pane, since key rotation may happen.
+
+### 2. Background processing model on macOS
+For scheduled triggers (morning brief, day review prompt) and email-arrival processing, what's the background mechanism? Options: `BGTaskScheduler` (proper background tasks), a long-running app instance with timers (relies on user keeping app open), or a launch agent (runs even when app is closed, more setup).
+Recommendation: `BGTaskScheduler` for scheduled triggers + the Mail Rule's AppleScript hook poking the running app via a local UNIX socket. If app isn't running when mail arrives, the AppleScript queues the message ID to a file and Smoory processes the queue on next launch.
+
+### 3. Voice input and dictation
+v1 says "voice via macOS dictation, then sent as text." That's the simplest path. Open: do we want a tighter integration (live transcription within the app for longer reflections during reviews)? Probably yes, eventually, via the Speech framework. Defer to post-v1.
+
+### 4. Multiple Mac support without iPhone
+If the user has a desktop Mac and a laptop, even without iPhone there's a sync question. Recommendation: defer. Single-machine in v1; revisit when iPhone is added (CloudKit covers Mac-to-Mac at that point too).
+
+### 5. Onboarding redo and data migration
+If the user runs onboarding a second time (after a major life change), how do we handle existing data? Recommendation: keep existing data, mark facts older than the redo as "pre-redo" with provenance, allow the user to deprecate them in batch. Don't wipe by default.
+
+### 6. Long-context handling for very chatty days
+A day with 100+ chat turns will exceed the context window if all turns are included. Hema retrieval bounds this for the orchestrator's calls, but the chat view itself shows the full session. Open: at what session length do we summarize-and-trim automatically? Recommendation: when a session crosses 200 turns or 30 days idle, archive into hema (turns become memory) and start a fresh session. The summary becomes the new session's seed context.
+
+### 7. Cost ceilings and rate limiting
+At expected volume, monthly cost should be under $20. But edge cases (infinite-loop tool calls, runaway batch operations) could spike. Open: do we want a daily spend ceiling configured by the user with a hard stop? Recommendation: yes, with sane defaults ($1/day), surfaced in preferences.
+
+### 8. Encryption at rest
+The SQLite hema database and the SwiftData store contain sensitive personal data. macOS FileVault encrypts the disk, which is the baseline. Open: do we additionally encrypt the database files at the application layer (e.g., SQLCipher for hema)? Recommendation: not in v1 — FileVault is sufficient for the personal use case. Add SQLCipher if multi-user or shared-device use cases ever emerge.
+
+### 9. Backup strategy
+The user's data is on their Mac. Time Machine handles disk backup. Open: do we provide an in-app export ("export everything as JSON" or "export hema as a bundle") for portability? Recommendation: yes, for v1.5 — export of facts, todos, goals, profile to JSON, and hema database file copy.
+
+### 10. Logging and observability
+Tool calls, AI calls, and triage outcomes should be logged for debugging. Open: where do logs live, how are they rotated, and how are they surfaced to the user (or to Claude Code during development)? Recommendation: a `Smoory.log` file in the App Group container, rotated weekly, with a "diagnostic mode" in preferences that increases verbosity. A small "show recent activity" view in settings would help debugging without exposing internals to the regular UI.
+
+### 11. Tool call validation strategy
+When Claude returns a tool call with malformed parameters, what's the recovery? Recommendation: tool-result error response that explains the malformation; Claude self-corrects on the next turn. After two failed tool calls in a row, the orchestrator drops back to a chat reply asking the user for clarification.
+
+### 12. Streaming vs. non-streaming for chat
+Streaming AI responses feel faster. But streaming complicates tool-call handling (tool calls can interleave with text). Recommendation: non-streaming for v1, streaming as a polish pass when the rest is stable.
+
+### 13. Localization
+Smoory speaks English in v1. The data model and prompts assume English. Open: is multi-language support important? Recommendation: defer entirely. Add as a separate effort post-v1 if needed.
+
+### 14. The widget's small and large variants
+The medium widget gets the daily focus card. Open: what do small and large variants show? Recommendation: small = today's primary task only; large = focus card + goal progress bars + next 2 calendar events. Build medium first; small and large after.
+
+---
+
+## Decision template (for future additions)
+
+When making a new architectural decision, document it here in this format:
+
+```
+## [Topic]
+
+**Decision:** What was decided.
+
+**Alternatives considered:** What else was on the table, and why each was rejected.
+
+**Why X wins:** The reason this option was chosen.
+
+**Trade-off accepted:** What costs come with this choice.
+```
+
+Keep this document up to date as decisions evolve. Future-you (and Claude Code) will thank present-you.
+
+---
+
+End of spec. Time to build.
