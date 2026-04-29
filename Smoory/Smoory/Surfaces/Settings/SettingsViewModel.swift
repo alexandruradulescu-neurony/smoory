@@ -3,14 +3,21 @@ import Observation
 
 @Observable
 @MainActor
-final class SettingsViewModel {
+final class APIKeyViewModel {
+    let service: String              // KeychainService service identifier
+    let providerLabel: String        // "Anthropic" / "Voyage" — used in feedback strings
+    let placeholder: String          // SecureField placeholder, e.g. "sk-ant-…"
+
     private(set) var hasKey: Bool
     var draft: String = ""
     var isReplacing: Bool = false
     private(set) var feedback: String?
 
-    init() {
-        self.hasKey = (KeychainService.read(service: KeychainService.anthropicAPIKeyService) != nil)
+    init(service: String, providerLabel: String, placeholder: String) {
+        self.service = service
+        self.providerLabel = providerLabel
+        self.placeholder = placeholder
+        self.hasKey = (KeychainService.read(service: service) != nil)
     }
 
     func beginReplace() {
@@ -29,7 +36,7 @@ final class SettingsViewModel {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
-            try KeychainService.write(trimmed, service: KeychainService.anthropicAPIKeyService)
+            try KeychainService.write(trimmed, service: service)
             hasKey = true
             isReplacing = false
             draft = ""
@@ -43,7 +50,7 @@ final class SettingsViewModel {
 
     func clear() {
         do {
-            try KeychainService.delete(service: KeychainService.anthropicAPIKeyService)
+            try KeychainService.delete(service: service)
             hasKey = false
             draft = ""
             isReplacing = false

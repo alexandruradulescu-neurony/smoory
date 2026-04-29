@@ -33,6 +33,35 @@ struct DebugCommands: Commands {
                     }
                 }
             }
+
+            Divider()
+
+            Button("Test Voyage embedding") {
+                Task {
+                    let embedder = VoyageEmbedder()
+                    let start = Date()
+                    do {
+                        let result = try await embedder.embedWithUsage(["hello world"])
+                        let elapsedMs = Int(Date().timeIntervalSince(start) * 1000)
+                        guard let first = result.embeddings.first else {
+                            print("[voyage] empty result")
+                            return
+                        }
+                        let tokens = result.totalTokens.map { String($0) } ?? "—"
+                        print("---- VOYAGE EMBED TEST ----")
+                        print("dimension: \(first.count)")
+                        print("first 10: \(Array(first.prefix(10)))")
+                        print("latency: \(elapsedMs) ms")
+                        print("tokens used: \(tokens)")
+                        print("---- END ----")
+                    } catch {
+                        print("[voyage] error: \(error)")
+                    }
+                }
+            }
+
+            Divider()
+
             Button("Reset hema") {
                 guard case .ready(let hema) = hemaState else {
                     print("[hema] Not ready — cannot reset.")
