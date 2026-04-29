@@ -41,5 +41,6 @@ struct SmooryApp: App {
             ContentView()
         }
         .modelContainer(sharedModelContainer)
+        .defaultSize(width: 1100, height: 700)
     }
 }
