@@ -11,7 +11,7 @@ This is a personal app for one user. It is not a consumer product, not a SaaS, n
 - Reads your email, your calendar, your reminders, and your todos, and connects the dots across them.
 - Holds your goals in mind, and quietly checks whether your daily activity is moving you toward them.
 - Has a real long-term memory (called **hema**) that lets it remember what you and it talked about weeks or months ago.
-- Surfaces the right thing at the right time through a **feed**, a **chat**, and a **desktop widget**.
+- Surfaces the right thing at the right time through a **feed**, a **chat**, a visual **todos list**, and a **desktop widget**.
 - Proposes actions — adding todos, drafting replies, rescheduling things, archiving threads — and acts only after you confirm.
 - Helps you reflect: 3-minute morning briefs, 3-minute end-of-day reviews, weekly check-ins on goals.
 - Learns about the people you correspond with — silently, slowly, transparently.

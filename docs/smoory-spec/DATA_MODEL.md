@@ -159,10 +159,15 @@ The day-to-day tactical unit. Most numerous entity in the system.
 - `deferralCount: Int` — how many times this todo has been deferred (signal for prioritization)
 - `source: TodoSource` — enum tracking origin: `.user_chat, .user_quickadd, .ai_proposal, .email_extraction, .calendar_extraction, .manual`
 - `relatedPeople: [Person]` — people referenced (e.g. "call Maria")
+- `parentTodo: Todo?` — for subtasks, points to the parent Todo. `nil` for top-level todos.
+- `subtasks: [Todo]` — children. Empty for childless todos AND for subtasks themselves (one level of nesting only).
 
 **Behavior notes:**
 - Smoory can propose, user confirms (tier 1).
 - Defer with reason captured for pattern observation in week reviews.
+- Subtasks are full Todos with `parentTodo` set. They share the same fields, the same tools, and the same memory side effects as top-level todos.
+- Subtasks cannot have their own subtasks. This is enforced at insertion time: a Todo's `parentTodo` must itself have `parentTodo == nil`. The constraint is also reflected in `create_subtask`'s validation logic.
+- The parent's "completion fraction" (e.g., `3/5`) is computed from `subtasks.filter { $0.isCompleted }.count` over `subtasks.count` at render time, not stored. The parent's `isCompleted` flag is independent of subtask state — completing all subtasks does NOT auto-complete the parent. This preserves user intent: the user might have non-subtask work to finish before considering the parent done.
 
 ---
 
@@ -400,7 +405,7 @@ The hema memory layer has its own schema, fully detailed in `MEMORY.md`:
 ```
 Role ──────┬─── Goal ──── Habit
            │     │
-           │     └─── Project ──── Todo
+           │     └─── Project ──── Todo (self-referential: parentTodo / subtasks)
            │              │         │
            │              ├──────── Thread
            │              │         │

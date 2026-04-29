@@ -147,6 +147,7 @@ These read state. Always silent. Always available.
 **Tier:** tier1_quick
 **Inputs:** `{"todo_id": "string"}`
 **Returns:** updated `Todo`.
+Works on both top-level todos and subtasks — they share the schema.
 
 ### `update_todo`
 **Purpose:** Modify an existing todo.
@@ -165,18 +166,40 @@ These read state. Always silent. Always available.
 }
 ```
 **Returns:** updated `Todo`.
+Works on both top-level todos and subtasks — they share the schema.
 
 ### `defer_todo`
 **Purpose:** Push the due date out and capture a reason.
 **Tier:** tier1_quick
 **Inputs:** `{"todo_id": "string", "new_due_date": "ISO date", "reason": "string?"}`
 **Returns:** updated `Todo`.
+Works on both top-level todos and subtasks — they share the schema.
 
 ### `delete_todo`
 **Purpose:** Soft-delete (archive) a todo.
 **Tier:** tier1_quick
 **Inputs:** `{"todo_id": "string"}`
 **Returns:** confirmation.
+Works on both top-level todos and subtasks — they share the schema.
+
+### `create_subtask`
+**Purpose:** Add a subtask to an existing Todo. Subtasks are full Todos with their `parentTodo` set; they share all the affordances of regular todos (due dates, priority, completion).
+**Tier:** tier1_quick
+**Inputs:**
+```
+{
+  "parent_todo_id": "string",      // required — UUID of the parent Todo
+  "title": "string",               // required
+  "due_date": "ISO 8601 date?",    // optional
+  "priority": "low|normal|high|urgent",  // optional, default normal
+  "role_slug": "string?"           // optional; subtasks inherit parent's role if not specified
+}
+```
+**Returns:** the created subtask Todo.
+**Notes:**
+- Fails with a tool error if `parent_todo_id` does not exist OR if the referenced Todo itself has `parentTodo != nil` (no second-level nesting).
+- If `role_slug` is omitted, the subtask inherits its parent's role.
+- The parent's fractional progress display updates automatically on the next render (computed from subtasks).
 
 ---
 

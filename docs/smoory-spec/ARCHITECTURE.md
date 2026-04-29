@@ -34,7 +34,7 @@ Smoory is composed of seven layers. Each layer has a single responsibility, and 
 ```
 
 ### 1. Surfaces
-The user-facing layer. Four surfaces, each with a distinct role:
+The user-facing layer. Five surfaces, each with a distinct role:
 - **Feed** — Smoory's home base. A priority-ordered queue of feed items: annotations, suggestions, alerts, briefs, reviews. The action surface.
 - **Chat** — a continuous conversational thread with Smoory. Backed by hema for memory across sessions. Reachable from any feed item ("ask about this") and from a global hotkey or menu bar.
 - **Widget** — a desktop widget that renders the daily focus card produced by the morning brief. Read-only; does not accept input.
@@ -172,6 +172,29 @@ The user approves, edits, or rejects. The rule becomes a visible artifact in the
 
 **Empty state:**
 When Smoory has nothing to surface, the feed shows a prompt — "Want to plan tomorrow?" or similar — that initiates a useful conversation. Empty state is opportunity, not failure.
+
+### The Todos surface
+
+A list view of all open todos with editing, search, and subtask support. The one explicit deviation from spec principle 3 ("conversation is the input mechanism, not forms").
+
+**Layout:**
+- Search field at the top (matches against todo titles).
+- List grouped by due-date status: overdue → today → soon (next 7 days) → later → no due date. Within each group, sorted by priority then chronologically.
+- Each row: checkbox (taps complete it), title, due-date pill, priority indicator, role badge, fractional progress (e.g., "3/5") for parent todos with subtasks.
+- Tap a row → expands to detail view with full editing (title, notes, due date, priority, role, project, subtasks).
+- Swipe a row → quick actions (defer, complete, delete).
+- Quick-add row at the top — title + optional date for fast entry.
+
+**Coexistence with chat:**
+- Both surfaces write to the same SwiftData store and produce the same hema turn entries. Neither path is "more real."
+- Chat path is the canonical channel for ambient capture: *"add a todo to call the dentist tomorrow"* fits a conversational moment.
+- Todos surface is for focused work: review, edit, reorganize, bulk operations.
+- Tools (`create_todo`, `update_todo`, `complete_todo`, `defer_todo`, `delete_todo`, `create_subtask`) drive both paths — chat uses them via tier-1 confirmation cards; the surface uses them directly when the user has already taken explicit action.
+
+**Subtasks:**
+- One level of nesting (todo → subtask). Subtasks cannot have subtasks.
+- Subtasks are full Todos with `parentTodo` set, displayed inline under the parent in the list view.
+- Parent shows fractional progress (`3/5`) when it has subtasks; parent is NOT auto-completed when all subtasks are done.
 
 ### The chat
 

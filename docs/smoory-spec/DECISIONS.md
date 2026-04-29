@@ -535,4 +535,20 @@ Keep this document up to date as decisions evolve. Future-you (and Claude Code) 
 
 ---
 
+## Visual Todos surface (added 2026-04-29)
+
+**Decision:** Add a Todos surface to the sidebar as a fifth primary surface. Todos are visible, searchable by title, editable inline, and support one level of subtasks. Parent todos display fractional completion progress (e.g., `3/5`) when they have subtasks. Both the chat path and the surface write to the same SwiftData store via the same set of tools.
+
+**Why:** Real Phase 2 usage of chat-first todo creation revealed that ambient capture works well, but visual scannability and bulk operations don't. Without a list view, verifying what's in the system requires asking "what's on my list?" each time, which is high-friction for routine review. The list view is the trust-and-focus affordance the chat alone cannot provide.
+
+**Trade-off:** Spec principle 3 (conversation as input mechanism) is no longer the only path. It remains the canonical path for ambient capture, but the list is now an equal first-class surface for management. The principle is amended in spirit: *conversation is the canonical input mechanism for capture; visual surfaces are first-class for focused management*.
+
+**Why one level of nesting:** Arbitrary nesting is tempting but empirically rare past two levels in real task management. The constraint keeps queries and UI tractable.
+
+**Why fractional progress, not auto-complete on subtask completion:** The user might have non-subtask work to finish before the parent is "done." Auto-complete on all-subtasks-done overrides user intent. Manual parent-completion preserves intent. The fraction is a progress indicator, not a state machine.
+
+**Source:** User observation during Phase 2 usage period, after milestone 2.2b was committed and chat-driven todo creation was working. Spec amended before milestone 2.2c began so the create_todo tool's design implicitly acknowledges the upcoming Todo subtask model.
+
+---
+
 End of spec. Time to build.
