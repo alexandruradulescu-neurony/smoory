@@ -399,7 +399,14 @@ If you ever clone this repo on a fresh machine and lose the project file, this s
 
 ---
 
-## Phase 2 milestone 2.1a — hema scaffolding decisions
+## Phase 2 milestone 2.1 — hema decisions
+
+Hema (long-term memory) was built across three sub-milestones:
+- **2.1a:** SQLite + sqlite-vec scaffolding, `HemaService` API, schema migrations, debug commands.
+- **2.1b:** `Embedder` protocol with `VoyageEmbedder` as the first implementation, parameterized Settings UI for multiple API keys.
+- **2.1c:** Embedding wired into hema writes and retrieval, privacy filter enforced at the SQL boundary, retrieval test that verifies the privacy contract end-to-end.
+
+The decisions below cover all three.
 
 ### Swift binding for sqlite-vec: `jkrukowski/SQLiteVec` 0.0.14
 
@@ -455,7 +462,56 @@ If you ever clone this repo on a fresh machine and lose the project file, this s
 
 **Decision:** Three debug commands live in a top-level `CommandMenu("Debug")` rather than nested under SwiftUI's auto-generated `View` menu. Practical equivalence; the macOS-canonical pattern is a top-level Debug menu.
 
-**Items in 2.1a:** `Dump hema state`, `Hema self-test`, `Reset hema` (with NSAlert confirmation — dev escape hatch for 2.1b/2.1c iteration).
+**Items at end of 2.1:** `Dump hema state`, `Hema self-test`, `Test Voyage embedding`, `Hema retrieval test`, `Reset hema` (NSAlert-confirmed). Dividers separate hema-only commands, Voyage-dependent commands, and the destructive Reset.
+
+### `Embedder` protocol — provider-agnostic abstraction
+
+**Decision:** The `Embedder` protocol (`Smoory/Smoory/Memory/Embedder.swift`) is the single point of abstraction for any embedding model. Methods take an `EmbeddingInputType` (`.document` / `.query`) so callers can express whether the text is being stored or used for retrieval — Voyage and other providers tune their embeddings differently for the two cases. A convenience overload defaults `inputType` to `.document` so the storage path stays clean.
+
+**Why provider-agnostic:** Hema must run regardless of whether Voyage, OpenAI, NLEmbedding, or a future local model is the embedder. The protocol shape supports any of them. `VoyageEmbedder` is the first conforming implementation; future implementations slot in at the protocol boundary without touching `HemaService`.
+
+### `VoyageEmbedder` defaults: `voyage-3` (1024-dim, unit-normalized)
+
+**Decision:** `VoyageEmbedder` hardcodes `model = voyage-3` and `dimension = 1024`. Voyage's documentation states `voyage-3` returns unit-normalized embeddings; we rely on that for the L2 → cosine conversion in retrieval. Closure-injected API key (read on every call) so swapping the key in Settings takes effect immediately. Defensive sort of response items by index, dimension validation on every returned vector.
+
+**Why hardcode:** Cleaner than parameterization at this stage. The protocol abstraction is what enables swapping models — by switching the `Embedder` implementation, not by parameterizing `VoyageEmbedder` itself.
+
+### `Embedder` optional on `HemaService` — asymmetric graceful degradation
+
+**Decision:** `HemaService.init(databaseURL:embedder:)` accepts an `Embedder?`. Production passes `VoyageEmbedder()`; nil is reserved for tests. The graceful-degradation behavior splits asymmetrically across writes and reads:
+
+- **Writes:** if the embedder is nil OR an embedding API call fails (missing key, network, 401, 429), the row is still written to the main table. The vec0 virtual table simply does not get a parallel insert. The failure is logged via `print` and the write returns success. The data is preserved; only the retrievability is degraded.
+- **Retrieval:** throws on any embedder failure. Without an embedded query there is nothing to compare against; returning empty would silently mislead callers.
+
+**Why asymmetric:** A chat turn vanishing because the network dropped is a worse experience than a retrieval surfacing fewer results because the embedder is unavailable. Writes preserve data; reads surface root cause. A future "backfill missing embeddings" command can re-embed orphaned rows once the embedder is available again.
+
+### `excludePrivate: true` is the default everywhere
+
+**Decision:** Both `retrieveSimilarFacts` (vector retrieval) and `readAllFacts` (structured listing) default to excluding private facts. Callers must explicitly pass `false` to include them.
+
+**Where the filter lives:** Inside `HemaService` SQL itself (`f.is_private = 0` clause). Not a wrapper around the orchestrator, not a per-recipe config, not a documented convention — the safe default is enforced at the boundary closest to the data. A forgetful or malicious caller cannot accidentally leak private facts into an LLM API call. `runRetrievalTest` verifies this contract on every test run: writes one private fact, queries with the default, asserts the private fact does not appear in the result set, and prints `(private fact correctly excluded from default retrieval)` as confirmation.
+
+### L2 distance → cosine similarity in Swift, not in vec0 schema
+
+**Decision:** vec0 virtual tables are created with the default L2 distance metric (no `distance_metric=cosine` option). Retrieval methods convert the L2 distance returned by vec0 to cosine similarity in Swift via `cos = 1 - L2² / 2`, mathematically valid for unit-normalized embeddings.
+
+**Alternatives considered:** Recreating vec0 tables with cosine metric via a migration 2 — rejected for 2.1c since the L2 conversion gives the same ranking AND the same numerical similarity values for unit vectors. If a future quality issue points to non-unit embeddings or numerical drift, migrating to cosine-metric tables is straightforward (drop and recreate; vec0 has no schema-evolution helper, so this is one transactional migration).
+
+### Subquery in fact retrieval to avoid filter starvation
+
+**Decision:** `retrieveSimilarFacts` uses a two-phase SQL: an inner subquery runs vec0's `MATCH` to fetch `overK = max(4*k, 20)` candidates, then the outer JOIN applies structured filters (private, expired, superseded, tags, entities) and re-trims to the requested k.
+
+**Why:** Without overfetching, requesting `k=5` could return 1 result when 4 of 5 vec0 hits get filtered out. The 4× overfetch factor is conservative for personal scale (the entire vec0 table fits anyway); it costs nothing until the corpus grows.
+
+### Settings: `APIKeyViewModel` parameterized by service
+
+**Decision:** Phase 1's `SettingsViewModel` was provider-specific. 2.1b generalized it to `APIKeyViewModel(service:providerLabel:placeholder:)`. The Settings UI renders one section per provider through a shared `APIKeySectionContent` subview. Two `@State`-managed instances exist today (Anthropic, Voyage); adding a third (OpenAI, a local model, etc.) is a one-line addition.
+
+**Trade-off:** `.keyboardShortcut(.defaultAction)` on the per-section Save button was removed in 2.1b because two simultaneous default actions in the same window would conflict. Per-section `SecureField.onSubmit` handles Return-to-save when the corresponding field is focused — same UX, no ambiguity.
+
+### Hema documentation deferred from MEMORY.md
+
+**Decision:** The privacy-filter-at-HemaService-boundary paragraph already lives in `MEMORY.md` (added in 2.1a alongside the schema sync). 2.1c did not add new spec text; the contract was already documented before the implementation.
 
 ---
 
