@@ -60,6 +60,21 @@ struct DebugCommands: Commands {
                 }
             }
 
+            Button("Hema retrieval test") {
+                guard case .ready(let hema) = hemaState else {
+                    print("[hema] Not ready — cannot run retrieval test.")
+                    return
+                }
+                Task {
+                    do {
+                        let report = try await hema.runRetrievalTest()
+                        for line in report.lines { print(line) }
+                    } catch {
+                        print("[hema] Retrieval test failed to run: \(error)")
+                    }
+                }
+            }
+
             Divider()
 
             Button("Reset hema") {

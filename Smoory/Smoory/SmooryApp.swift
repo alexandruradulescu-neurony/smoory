@@ -65,7 +65,7 @@ struct SmooryApp: App {
     private func initializeHemaIfNeeded() async {
         guard case .loading = hemaState else { return }
         do {
-            let hema = try await HemaService()
+            let hema = try await HemaService(embedder: VoyageEmbedder())
             hemaState = .ready(hema)
             print("[smoory] hema ready at \(hema.databaseURL.path(percentEncoded: false))")
         } catch {
