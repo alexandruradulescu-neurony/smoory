@@ -23,21 +23,38 @@ final class ChatViewModel {
     var draft: String = ""
 
     private let orchestrator: Orchestrator
-    private let chatSessionID = UUID()
-    private let systemPrompt = """
-You are Smoory, a helpful assistant running on the user's Mac. This is a Phase 1 development build — no memory, no tools, no structured context yet. Be conversational, concise, and honest that you don't yet have the full Smoory features wired up.
+    private let hema: HemaService
+    private let chatSessionID: UUID
 
-You have tools available to read the user's calendar, goals, and todos. Use them when relevant. Don't narrate that you're using tools — just use them and answer.
+    private let systemPrompt = """
+You are Smoory, a personal AI assistant for the user. You're running on the user's Mac.
+
+You have access to:
+- The user's calendar via get_calendar_window
+- The user's active goals via get_active_goals
+- The user's open todos via get_open_todos
+- The user's memory of past conversations and learned facts via retrieve_memory
+
+The compact summaries below are always-on. For specific past facts, names, or events, \
+use retrieve_memory with a focused query.
+
+Be conversational, concise, and honest about what you don't know. If memory retrieval \
+returns nothing relevant, say so.
 """
 
     init(
         modelContainer: ModelContainer,
+        hema: HemaService,
+        chatSessionID: UUID,
         client: LLMClient = AnthropicClient(),
         calendarService: CalendarService = CalendarService()
     ) {
+        self.hema = hema
+        self.chatSessionID = chatSessionID
         let services = ToolServices(
             calendarService: calendarService,
-            modelContainer: modelContainer
+            modelContainer: modelContainer,
+            hema: hema
         )
         self.orchestrator = Orchestrator(
             client: client,
@@ -84,6 +101,18 @@ You have tools available to read the user's calendar, goals, and todos. Use them
                     text: displayText,
                     usedToolNames: usedNames.isEmpty ? nil : usedNames
                 ))
+
+                // 2.2b: persist the conversational text to hema, off the critical path.
+                // Errors aren't conversational content; only the success branch persists.
+                let userMessageToPersist = trimmed
+                let assistantTextToPersist = result.finalText
+                Task {
+                    await self.persistTurns(
+                        userMessage: userMessageToPersist,
+                        assistantReply: assistantTextToPersist
+                    )
+                }
+
             case .clientError(let error):
                 turns.append(Turn(
                     id: UUID(),
@@ -108,6 +137,37 @@ You have tools available to read the user's calendar, goals, and todos. Use them
             ))
         }
         state = .idle
+    }
+
+    /// Writes the conversational pair to hema. Tool-use / tool-result blocks are NOT persisted —
+    /// they're not user-meaningful conversational content and would pollute vector retrieval.
+    /// Failures are logged but never surface to the chat — memory write outages should not
+    /// disrupt the conversation.
+    private func persistTurns(userMessage: String, assistantReply: String) async {
+        do {
+            try await hema.writeTurn(MemoryTurn(
+                id: UUID(),
+                createdAt: Date(),
+                chatSessionID: chatSessionID,
+                role: .user,
+                content: userMessage,
+                metadataJSON: nil,
+                vector: nil
+            ))
+            if !assistantReply.isEmpty {
+                try await hema.writeTurn(MemoryTurn(
+                    id: UUID(),
+                    createdAt: Date(),
+                    chatSessionID: chatSessionID,
+                    role: .assistant,
+                    content: assistantReply,
+                    metadataJSON: nil,
+                    vector: nil
+                ))
+            }
+        } catch {
+            print("[chat] hema write failed: \(error)")
+        }
     }
 
     private static func deduplicate(_ names: [String]) -> [String] {

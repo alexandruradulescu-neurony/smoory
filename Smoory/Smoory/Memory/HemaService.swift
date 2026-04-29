@@ -657,6 +657,51 @@ final class HemaService: @unchecked Sendable {
         return SelfTestReport(passed: passed, lines: lines)
     }
 
+    /// Writes a small seeded set of facts for chat-side testing of retrieve_memory.
+    /// Idempotency: not deduped — re-running creates duplicates. Use `reset()` to start clean.
+    func seedTestData() async throws -> SelfTestReport {
+        var lines: [String] = ["---- HEMA SEED TEST DATA ----"]
+
+        let seeds: [(body: String, tags: [String])] = [
+            ("User's name is Alexandru and he lives in Bucharest.",
+             ["personal"]),
+            ("User runs his own business called Smoory and works on it in evenings.",
+             ["work", "business"]),
+            ("User's primary IDE is Xcode for Smoory development.",
+             ["work", "tools"]),
+            ("User prefers focused work in mornings.",
+             ["preferences"]),
+        ]
+
+        var written = 0
+        for (body, tags) in seeds {
+            let fact = SemanticFact(
+                id: UUID(),
+                body: body,
+                tags: tags,
+                entitiesReferenced: [],
+                confidence: 0.95,
+                userConfirmed: true,
+                createdAt: Date(),
+                expiresAt: nil,
+                supersededBy: nil,
+                provenanceJSON: nil,
+                vector: nil,
+                isPrivate: false
+            )
+            do {
+                try await writeFact(fact)
+                written += 1
+                lines.append("OK: wrote \"\(body)\"")
+            } catch {
+                lines.append("FAIL: writeFact \"\(body)\" — \(error)")
+            }
+        }
+
+        lines.append("---- DONE: \(written) of \(seeds.count) facts written ----")
+        return SelfTestReport(passed: written == seeds.count, lines: lines)
+    }
+
     /// Dev escape hatch — closes connection, deletes the DB file, reopens, applies migrations.
     /// Not safe to call concurrently with reads/writes; treat as single-call from a dev menu.
     func reset() async throws {

@@ -12,6 +12,8 @@ import SwiftUI
 @main
 struct SmooryApp: App {
     @State private var hemaState: HemaState = .loading
+    /// Stable for the app's lifetime so navigating sidebar away and back doesn't reset the chat session.
+    @State private var chatSessionID = UUID()
 
     init() {
         // Load the sqlite-vec extension into SQLite globally. Must happen before any Database init.
@@ -52,6 +54,8 @@ struct SmooryApp: App {
         WindowGroup {
             ContentView()
                 .environment(\.dynamicTypeSize, .xLarge)
+                .environment(\.hemaState, hemaState)
+                .environment(\.chatSessionID, chatSessionID)
                 .task { await initializeHemaIfNeeded() }
         }
         .modelContainer(sharedModelContainer)

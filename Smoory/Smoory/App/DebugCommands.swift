@@ -75,6 +75,21 @@ struct DebugCommands: Commands {
                 }
             }
 
+            Button("Seed hema with test data") {
+                guard case .ready(let hema) = hemaState else {
+                    print("[hema] Not ready — cannot seed.")
+                    return
+                }
+                Task {
+                    do {
+                        let report = try await hema.seedTestData()
+                        for line in report.lines { print(line) }
+                    } catch {
+                        print("[hema] Seed failed: \(error)")
+                    }
+                }
+            }
+
             Divider()
 
             Button("Tool registry dump") {

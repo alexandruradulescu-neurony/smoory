@@ -3,20 +3,63 @@ import SwiftUI
 
 struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.hemaState) private var hemaState
+    @Environment(\.chatSessionID) private var chatSessionID
 
     var body: some View {
-        // Wrapper so the inner view's @State can be initialized with the env-provided container.
-        ChatViewContent(modelContainer: modelContext.container)
+        Group {
+            switch hemaState {
+            case .loading:
+                loadingView
+            case .ready(let hema):
+                ChatViewContent(
+                    modelContainer: modelContext.container,
+                    hema: hema,
+                    chatSessionID: chatSessionID
+                )
+            case .failed(let message):
+                failedView(message: message)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle(Surface.chat.title)
+    }
+
+    private var loadingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Loading memory…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func failedView(message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 40))
+                .foregroundStyle(.tertiary)
+            Text("Memory failed to initialize")
+                .font(.title3)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding()
     }
 }
 
 private struct ChatViewContent: View {
-    private let surface: Surface = .chat
     @State private var viewModel: ChatViewModel
     @FocusState private var isInputFocused: Bool
 
-    init(modelContainer: ModelContainer) {
-        _viewModel = State(wrappedValue: ChatViewModel(modelContainer: modelContainer))
+    init(modelContainer: ModelContainer, hema: HemaService, chatSessionID: UUID) {
+        _viewModel = State(wrappedValue: ChatViewModel(
+            modelContainer: modelContainer,
+            hema: hema,
+            chatSessionID: chatSessionID
+        ))
     }
 
     var body: some View {
@@ -25,8 +68,6 @@ private struct ChatViewContent: View {
             Divider()
             composer
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle(surface.title)
         .onAppear { isInputFocused = true }
     }
 

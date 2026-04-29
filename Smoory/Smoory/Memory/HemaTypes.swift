@@ -68,7 +68,7 @@ struct SelfTestReport: Sendable {
     let lines: [String]
 }
 
-enum HemaState {
+enum HemaState: Sendable {
     case loading
     case ready(HemaService)
     case failed(String)

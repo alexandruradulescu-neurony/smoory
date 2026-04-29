@@ -5,6 +5,7 @@ enum ToolRegistry {
         GetCalendarWindowTool.self,
         GetActiveGoalsTool.self,
         GetOpenTodosTool.self,
+        RetrieveMemoryTool.self,
     ]
 
     static func tool(named name: String) -> (any Tool.Type)? {

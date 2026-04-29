@@ -30,17 +30,23 @@ final class Orchestrator {
         userMessage: String,
         modelTier: ModelTier
     ) async throws -> OrchestratorTurn {
+        // 2.2b: assemble the full system prompt with always-on compact memory + user_context
+        // before the first client.complete. Rebuilt each turn — active summaries can change.
+        let fullSystemPrompt = await Self.assemblePrompt(
+            basePrompt: systemPrompt,
+            hema: services.hema
+        )
+
         var messages = history + [LLMMessage(role: .user, text: userMessage)]
         var toolExchanges: [ToolExchange] = []
         var rounds = 0
 
         while true {
-            // 1. Call Claude
             let response: LLMResponse
             do {
                 response = try await client.complete(
                     model: modelTier,
-                    systemPrompt: systemPrompt,
+                    systemPrompt: fullSystemPrompt,
                     messages: messages,
                     tools: toolDefinitions
                 )
@@ -53,10 +59,8 @@ final class Orchestrator {
                 )
             }
 
-            // 2. Always append the assistant response (text + tool_use blocks) to history
             messages.append(LLMMessage(role: .assistant, content: response.content))
 
-            // 3. Extract tool_use blocks
             let toolUses: [(id: String, name: String, input: String)] = response.content.compactMap { block in
                 if case let .toolUse(id, name, parametersJSON) = block {
                     return (id, name, parametersJSON)
@@ -64,7 +68,6 @@ final class Orchestrator {
                 return nil
             }
 
-            // 4. No tool calls → natural end
             if toolUses.isEmpty {
                 return OrchestratorTurn(
                     finalText: response.text,
@@ -74,7 +77,6 @@ final class Orchestrator {
                 )
             }
 
-            // 5. Tool calls present — count this round
             rounds += 1
 
             if rounds > maxToolCallRounds {
@@ -89,9 +91,8 @@ final class Orchestrator {
                 )
             }
 
-            // 6. Execute each tool call, collect tool_result blocks
-            //    All tool_result blocks for this round go into a SINGLE user message —
-            //    Anthropic's API requires this; emitting one user message per tool_result is wrong.
+            // All tool_result blocks for this round go into a SINGLE user message —
+            // Anthropic's API requires this; emitting one user message per tool_result is wrong.
             var toolResultBlocks: [LLMContent] = []
             for use in toolUses {
                 let exchange = await executeToolUse(
@@ -107,9 +108,7 @@ final class Orchestrator {
                 ))
             }
 
-            // Single batched user message with all tool_result blocks
             messages.append(LLMMessage(role: .user, content: toolResultBlocks))
-            // Loop back
         }
     }
 
@@ -126,7 +125,6 @@ final class Orchestrator {
             )
         }
 
-        // 2.2a only handles .silent — non-silent tools error out until 2.2c lands the confirmation UI.
         guard toolType.confirmationTier == .silent else {
             return ToolExchange(
                 toolName: name,
@@ -164,6 +162,52 @@ final class Orchestrator {
             )
         }
     }
+
+    /// Build the full system prompt: base prompt + (optional) compact_memory block + user_context block.
+    /// Compact memory block is omitted entirely when no active summaries exist (bootstrapping case)
+    /// or when the read fails — avoids Claude commenting on placeholder text.
+    /// The user_context block is always appended so retrieve_memory stays discoverable.
+    private static func assemblePrompt(basePrompt: String, hema: HemaService) async -> String {
+        let memories: [CompactMemory]
+        do {
+            memories = try await hema.readActiveCompactMemories()
+        } catch {
+            print("[orchestrator] readActiveCompactMemories failed — proceeding without compact memory: \(error)")
+            memories = []
+        }
+
+        let overall = body(of: memories, kind: .overall)
+        let recent = body(of: memories, kind: .recent)
+        let today = body(of: memories, kind: .today)
+
+        let allEmpty = (overall == nil && recent == nil && today == nil)
+
+        var sections: [String] = [basePrompt]
+
+        if !allEmpty {
+            sections.append("""
+            <compact_memory>
+            Overall: \(overall ?? "(not yet generated)")
+            Recent: \(recent ?? "(not yet generated)")
+            Today: \(today ?? "(not yet generated)")
+            </compact_memory>
+            """)
+        }
+
+        sections.append("""
+        <user_context>
+        You have access to the user's accumulated memory through the retrieve_memory tool when \
+        relevant. The compact summaries above are always-on context. For specific facts, names, \
+        past events, or relationships, use retrieve_memory with a focused query.
+        </user_context>
+        """)
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    private static func body(of memories: [CompactMemory], kind: CompactMemory.Kind) -> String? {
+        memories.first(where: { $0.kind == kind })?.body
+    }
 }
 
 struct OrchestratorTurn: Sendable {
@@ -182,6 +226,6 @@ struct ToolExchange: Sendable {
 enum OrchestratorStopReason: Sendable {
     case naturalEnd                           // Claude finished without more tool calls
     case maxRoundsReached                     // hit maxToolCallRounds cap
-    case toolError(String)                    // Reserved for future use (e.g., aborting on repeated tool failures); not emitted in 2.2a.
+    case toolError(String)                    // Reserved for future use (e.g., aborting on repeated tool failures); not emitted in 2.2a/2.2b.
     case clientError(Error)                   // LLMClient threw
 }

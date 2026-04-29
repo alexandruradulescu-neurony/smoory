@@ -17,5 +17,5 @@ struct ToolExecutionContext: Sendable {
 struct ToolServices: Sendable {
     let calendarService: CalendarService
     let modelContainer: ModelContainer
-    // hema: HemaService?  — added in 2.2c when memory tools land.
+    let hema: HemaService
 }
