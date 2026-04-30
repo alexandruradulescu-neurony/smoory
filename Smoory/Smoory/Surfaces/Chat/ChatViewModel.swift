@@ -125,6 +125,14 @@ When you sense the user has covered the basics, or the user signals they're done
             return
         }
 
+        // Slash command intercept: re-enter onboarding for users who skipped or
+        // want a refresher.
+        if trimmed.lowercased() == "/start onboarding" || trimmed.lowercased() == "/restart onboarding" {
+            draft = ""
+            startOnboarding()
+            return
+        }
+
         let userTurn = Turn(id: UUID(), speaker: .user, text: trimmed, usedToolNames: nil)
         turns.append(userTurn)
         draft = ""

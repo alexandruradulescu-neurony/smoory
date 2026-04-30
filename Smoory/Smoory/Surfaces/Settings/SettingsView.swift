@@ -20,6 +20,9 @@ struct SettingsView: View {
     )
     @State private var providerVM = ProviderViewModel()
 
+    @Environment(\.chatViewModel) private var chatViewModel
+    @State private var onboardingFeedback: String?
+
     @Bindable private var failureCounter = StructuringFailureCounter.shared
 
     var body: some View {
@@ -63,6 +66,23 @@ struct SettingsView: View {
 
             Section("Voyage API key") {
                 APIKeySectionContent(viewModel: voyageVM)
+            }
+
+            Section("Onboarding") {
+                HStack {
+                    Button("Restart onboarding") {
+                        chatViewModel?.startOnboarding()
+                        OnboardingStateStore.set(.inProgress)
+                        onboardingFeedback = "Onboarding restarted. Open Chat to continue."
+                    }
+                    .disabled(chatViewModel == nil)
+                    Spacer()
+                }
+                if let onboardingFeedback {
+                    Text(onboardingFeedback)
+                        .font(.smoory_caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Diagnostics") {

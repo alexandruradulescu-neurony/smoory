@@ -9,16 +9,24 @@ struct TodoRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             Button(action: onComplete) {
-                Image(systemName: "circle")
+                Image(systemName: todo.isCompleted ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(todo.isCompleted ? AnyShapeStyle(Color.green) : AnyShapeStyle(.secondary))
             }
             .buttonStyle(.borderless)
-            .help("Mark complete")
+            .help(todo.isCompleted ? "Completed" : "Mark complete")
+            .disabled(todo.isCompleted || todo.isArchived)
 
             NavigationLink(value: todo.id) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(todo.title).font(.smoory_body)
+                    Text(todo.title)
+                        .font(.smoory_body)
+                        .strikethrough(todo.isCompleted || todo.isArchived)
+                        .foregroundStyle(
+                            (todo.isCompleted || todo.isArchived)
+                                ? AnyShapeStyle(.tertiary)
+                                : AnyShapeStyle(.primary)
+                        )
 
                     HStack(spacing: 6) {
                         if let dueDate = todo.dueDate {

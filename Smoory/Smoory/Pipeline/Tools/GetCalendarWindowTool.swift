@@ -32,12 +32,18 @@ enum GetCalendarWindowTool: Tool {
 
     private struct EventPayload: Encodable {
         let title: String
-        let start: String          // ISO 8601
+        let start: String          // ISO 8601 with local timezone offset
         let end: String
         let location: String?
         let isAllDay: Bool
         let calendarName: String
     }
+
+    /// ISO 8601 in the user's local timezone so wall-clock times round-trip the LLM
+    /// unchanged. Default `.iso8601` style emits UTC with a "Z" suffix, which the
+    /// chat model then parrots verbatim — making 08:00 local read back as 05:00 in
+    /// EEST. Including the +HH:MM offset removes the ambiguity.
+    private static let localISO = Date.ISO8601FormatStyle(timeZone: .current)
 
     static func execute(
         parametersJSON: String,
@@ -67,8 +73,8 @@ enum GetCalendarWindowTool: Tool {
         let payload = filtered.map { event in
             EventPayload(
                 title: event.title,
-                start: event.start.formatted(.iso8601),
-                end: event.end.formatted(.iso8601),
+                start: event.start.formatted(Self.localISO),
+                end: event.end.formatted(Self.localISO),
                 location: event.location,
                 isAllDay: event.isAllDay,
                 calendarName: event.calendarName

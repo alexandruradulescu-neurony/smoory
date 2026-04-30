@@ -62,8 +62,6 @@ private struct FeedListContent: View {
             let rows = currentRows
 
             List {
-                calendarContent
-
                 Section {
                     if rows.isEmpty {
                         emptyState
@@ -81,20 +79,33 @@ private struct FeedListContent: View {
                 } header: {
                     candidatesSectionHeader
                 }
+
+                // Explicit divider row between the candidates section and the
+                // calendar block. Auto separators are off (see .listSectionSeparator
+                // below) so this is the only horizontal line in the list.
+                Divider()
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .padding(.vertical, 8)
+
+                calendarContent
             }
             .listStyle(.inset)
+            .listSectionSeparator(.hidden)
+            .listRowSeparator(.hidden)
         }
         .task { await calendar.load() }
     }
 
     @ViewBuilder
     private var candidatesSectionHeader: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "tray")
-                .foregroundStyle(.tertiary)
-                .imageScale(.small)
+                .foregroundStyle(.secondary)
             Text("To review")
-                .font(.smoory_heading)
+                .font(.smoory_display)
+                .foregroundStyle(.primary)
+                .textCase(nil)
             Spacer()
         }
         .padding(.vertical, 4)
@@ -140,34 +151,26 @@ private struct FeedListContent: View {
         let allEmpty = filtered.allSatisfy(\.isEmpty)
         let hasActiveSearch = !viewModel.searchText.trimmingCharacters(in: .whitespaces).isEmpty
 
-        if allEmpty {
-            // Collapse a fully-empty window to a single neutral line. Keep the section
-            // header so calendar context still has its slot above the candidates.
-            Section {
-                HStack(spacing: 6) {
-                    Image(systemName: "calendar")
-                        .foregroundStyle(.tertiary)
-                        .imageScale(.small)
-                    Text(hasActiveSearch
-                         ? "No events match \u{201C}\(viewModel.searchText)\u{201D}."
-                         : "Nothing scheduled in the next 3 days.")
-                        .font(.smoory_caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.vertical, 4)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            } header: {
-                calendarSectionHeader
-            }
-        } else {
-            ForEach(filtered) { section in
-                Section {
+        // Master "Calendar" header — single Section spanning all day groups so the
+        // surface reads as: candidates first, divider, calendar block.
+        Section {
+            if allEmpty {
+                Text(hasActiveSearch
+                     ? "No events match \u{201C}\(viewModel.searchText)\u{201D}."
+                     : "Nothing scheduled in the next 3 days.")
+                    .font(.smoory_body)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(filtered) { section in
+                    daySubtitle(section.header)
                     if section.isEmpty {
                         Text("Nothing scheduled.")
-                            .font(.smoory_caption)
-                            .foregroundStyle(.tertiary)
+                            .font(.smoory_body)
+                            .foregroundStyle(.secondary)
                             .listRowSeparator(.hidden)
                     } else {
                         ForEach(section.allDay) { item in
@@ -177,35 +180,39 @@ private struct FeedListContent: View {
                             CalendarEventRow(item: item).listRowSeparator(.hidden)
                         }
                     }
-                } header: {
-                    daySectionHeader(section.header)
                 }
             }
+        } header: {
+            calendarSectionHeader
         }
     }
 
     @ViewBuilder
     private var calendarSectionHeader: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "calendar")
-                .foregroundStyle(.tertiary)
-                .imageScale(.small)
-            Text("Next 3 days")
-                .font(.smoory_heading)
+                .foregroundStyle(.secondary)
+            Text("Calendar")
+                .font(.smoory_display)
+                .foregroundStyle(.primary)
+                .textCase(nil)
             Spacer()
         }
         .padding(.vertical, 4)
     }
 
-    private func daySectionHeader(_ header: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "calendar")
-                .foregroundStyle(.tertiary)
-                .imageScale(.small)
-            Text(header).font(.smoory_heading)
-            Spacer()
-        }
-        .padding(.vertical, 4)
+    /// Day subtitle row inside the master Calendar section. All days use the same
+    /// style — no per-day icon, no first-vs-rest variance.
+    private func daySubtitle(_ header: String) -> some View {
+        Text(header)
+            .font(.smoory_heading)
+            .foregroundStyle(.primary)
+            .textCase(nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 12)
+            .padding(.bottom, 2)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
     }
 
     @ViewBuilder
@@ -298,9 +305,11 @@ private struct FeedListContent: View {
         EmptyState(
             symbol: "tray",
             headline: "Nothing to review.",
-            detail: "Smoory will surface things here as they come up."
+            detail: "Smoory will surface things here as they come up.",
+            compact: true
         )
         .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 
     private func toggleExpand(_ id: UUID) {

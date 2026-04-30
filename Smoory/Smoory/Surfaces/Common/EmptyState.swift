@@ -4,17 +4,19 @@ struct EmptyState: View {
     let symbol: String
     let headline: String
     let detail: String?
+    let compact: Bool
 
-    init(symbol: String, headline: String, detail: String? = nil) {
+    init(symbol: String, headline: String, detail: String? = nil, compact: Bool = false) {
         self.symbol = symbol
         self.headline = headline
         self.detail = detail
+        self.compact = compact
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: compact ? 8 : 12) {
             Image(systemName: symbol)
-                .font(.system(size: 48, weight: .light))
+                .font(.system(size: compact ? 32 : 48, weight: .light))
                 .foregroundStyle(.tertiary)
             VStack(spacing: 4) {
                 Text(headline)
@@ -29,7 +31,7 @@ struct EmptyState: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+        .padding(.vertical, compact ? 24 : 60)
         .padding(.horizontal, 24)
     }
 }

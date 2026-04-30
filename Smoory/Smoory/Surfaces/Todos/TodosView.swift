@@ -18,7 +18,8 @@ struct TodosView: View {
                 QuickAddRow(modelContainer: modelContext.container)
                 SearchBar(text: $viewModel.searchText, placeholder: "Search todos")
                     .padding(.horizontal)
-                    .padding(.vertical, 8)
+                    .padding(.top, 8)
+                statusFilterPill
 
                 let groups = viewModel.groupedTodos(from: allTodos)
 
@@ -120,6 +121,20 @@ struct TodosView: View {
         }
     }
 
+    private var statusFilterPill: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                FilterPicker(
+                    selected: $viewModel.statusFilter,
+                    titleProvider: { $0.title },
+                    isAllCase: { $0 == .open }
+                )
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+        }
+    }
+
     private func sectionHeader(for group: DueDateGroup, count: Int) -> some View {
         HStack(spacing: 6) {
             Circle().fill(group.color).frame(width: 8, height: 8)
@@ -132,20 +147,37 @@ struct TodosView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        if viewModel.searchText.isEmpty {
-            EmptyState(
-                symbol: "checkmark.seal",
-                headline: "No open todos.",
-                detail: "Add one above, or ask Smoory in Chat."
-            )
-            .listRowBackground(Color.clear)
-        } else {
+        if !viewModel.searchText.isEmpty {
             EmptyState(
                 symbol: "checkmark.seal",
                 headline: "No todos match \u{201C}\(viewModel.searchText)\u{201D}.",
                 detail: nil
             )
             .listRowBackground(Color.clear)
+        } else {
+            switch viewModel.statusFilter {
+            case .open:
+                EmptyState(
+                    symbol: "checkmark.seal",
+                    headline: "No open todos.",
+                    detail: "Add one above, or ask Smoory in Chat."
+                )
+                .listRowBackground(Color.clear)
+            case .completed:
+                EmptyState(
+                    symbol: "checkmark.circle",
+                    headline: "No completed todos yet.",
+                    detail: nil
+                )
+                .listRowBackground(Color.clear)
+            case .archived:
+                EmptyState(
+                    symbol: "archivebox",
+                    headline: "No archived todos.",
+                    detail: nil
+                )
+                .listRowBackground(Color.clear)
+            }
         }
     }
 
