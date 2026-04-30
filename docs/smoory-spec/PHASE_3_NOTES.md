@@ -35,3 +35,11 @@ Default to option 1 unless option 2 surfaces a use case that pure SwiftData quer
 This gap must not be silently lost. If Phase 3.4 lands without a reasoned choice between the two options, week-review pattern observation will produce inconsistent or incomplete results. Pick a path before building 3.4.
 
 ---
+
+## Open gap from Phase 2 — Memory inspection has no pagination
+
+**Decided in milestone 2.3 (2026-04-30).**
+
+Memory inspection has hard 500-row limit per query, no pagination. Personal-scale memory grows slowly; revisit if hema accumulates >1k facts or >5k turns. Pagination is straightforward (offset is already a parameter on hema methods); UI work is the addition.
+
+---

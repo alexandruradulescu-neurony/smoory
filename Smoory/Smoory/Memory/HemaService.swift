@@ -197,9 +197,15 @@ final class HemaService: @unchecked Sendable {
         params.append(limit)
         params.append(offset)
 
+        // COALESCE on nullable text columns: SQLiteVec caches column types from row 1 only and
+        // crashes on later NULLs (Database.swift:318/352). Wrapping every nullable text column
+        // never returns NULL → library treats them all as TEXT consistently.
         let sql = """
             SELECT id, body, tags_json, entities_json, confidence, user_confirmed, is_private,
-                   created_at, expires_at, superseded_by, provenance_json
+                   created_at,
+                   COALESCE(expires_at, '') AS expires_at,
+                   COALESCE(superseded_by, '') AS superseded_by,
+                   COALESCE(provenance_json, '') AS provenance_json
             FROM semantic_facts
             WHERE \(clauses.joined(separator: " AND "))
             ORDER BY created_at DESC
@@ -320,6 +326,64 @@ final class HemaService: @unchecked Sendable {
     /// Result is in [-1, 1], with 1 = identical, 0 = orthogonal, -1 = opposite.
     private static func l2ToCosineSimilarity(_ l2: Double) -> Double {
         1.0 - (l2 * l2) / 2.0
+    }
+
+    // MARK: - Browsing reads (memory inspection surface)
+
+    /// All turns matching the optional filters, newest first. Vectors are not loaded.
+    /// Caller filters further client-side as needed.
+    func readAllTurns(
+        limit: Int = 500,
+        offset: Int = 0,
+        since: Date? = nil,
+        before: Date? = nil,
+        role: MemoryTurn.Role? = nil
+    ) async throws -> [MemoryTurn] {
+        var clauses: [String] = ["1=1"]
+        var params: [any Sendable] = []
+        if let since {
+            clauses.append("created_at >= ?")
+            params.append(since.formatted(.iso8601))
+        }
+        if let before {
+            clauses.append("created_at < ?")
+            params.append(before.formatted(.iso8601))
+        }
+        if let role {
+            clauses.append("role = ?")
+            params.append(role.rawValue)
+        }
+        params.append(limit)
+        params.append(offset)
+
+        // COALESCE on nullable columns: SQLiteVec's column-type cache (Database.swift:318)
+        // captures the type from the first row only and crashes on later rows where the same
+        // column is NULL. Wrapping the column never returns NULL → library handles it as TEXT.
+        let sql = """
+            SELECT id, created_at, chat_session_id, role, content,
+                   COALESCE(metadata_json, '') AS metadata_json
+            FROM memory_turns
+            WHERE \(clauses.joined(separator: " AND "))
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        """
+        let rows = try await db.query(sql, params: params)
+        return try rows.map { try Self.decodeTurn(from: $0) }
+    }
+
+    /// Turns belonging to one chat session, oldest first. Used by the turn detail view to
+    /// render surrounding session context.
+    func readTurns(inSession sessionID: UUID, limit: Int = 200) async throws -> [MemoryTurn] {
+        let sql = """
+            SELECT id, created_at, chat_session_id, role, content,
+                   COALESCE(metadata_json, '') AS metadata_json
+            FROM memory_turns
+            WHERE chat_session_id = ?
+            ORDER BY created_at ASC
+            LIMIT ?
+        """
+        let rows = try await db.query(sql, params: [sessionID.uuidString, limit])
+        return try rows.map { try Self.decodeTurn(from: $0) }
     }
 
     // MARK: - Mutations
