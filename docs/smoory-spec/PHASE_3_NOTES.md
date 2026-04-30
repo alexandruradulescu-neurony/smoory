@@ -44,6 +44,14 @@ Memory inspection has hard 500-row limit per query, no pagination. Personal-scal
 
 ---
 
+## Open gap from Phase 2 — Skipped onboarding has no recovery
+
+**Decided in milestone 2.5 (2026-04-30).**
+
+Onboarding 'Skip for now' is one-shot in v1 — user can't trigger it again from anywhere in the product. If users who skip later want to onboard properly, they'd need a Settings option to reset OnboardingState to .notStarted. Implement after first round of usage tells us if anyone actually skips and regrets it.
+
+---
+
 ## Open gap from Phase 2 — Availability candidates not proactive
 
 **Decided in milestone 2.4 (2026-04-30).**

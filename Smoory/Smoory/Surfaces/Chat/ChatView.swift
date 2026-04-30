@@ -42,22 +42,54 @@ struct ChatView: View {
 private struct ChatViewContent: View {
     @Bindable var viewModel: ChatViewModel
     @FocusState private var isInputFocused: Bool
-    @State private var showCandidatesSheet: Bool = false
+    @State private var showOnboardingPrompt: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
+            if viewModel.onboardingMode {
+                onboardingBanner
+            }
             transcript
-            CandidatesNotice(onTap: { showCandidatesSheet = true })
             Divider()
             composer
         }
-        .onAppear { isInputFocused = true }
-        .sheet(isPresented: $showCandidatesSheet) {
-            CandidatesSheet(
-                hema: viewModel.hema,
-                onDone: { showCandidatesSheet = false }
+        .onAppear {
+            isInputFocused = true
+            if OnboardingStateStore.current() == .notStarted {
+                showOnboardingPrompt = true
+            }
+        }
+        .sheet(isPresented: $showOnboardingPrompt) {
+            OnboardingPromptSheet(
+                onStart: {
+                    OnboardingStateStore.set(.inProgress)
+                    viewModel.startOnboarding()
+                    showOnboardingPrompt = false
+                },
+                onSkip: {
+                    OnboardingStateStore.set(.completed)
+                    showOnboardingPrompt = false
+                }
             )
         }
+    }
+
+    private var onboardingBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .foregroundStyle(Color.accentColor)
+                .imageScale(.small)
+            Text("Onboarding in progress")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Finish") { viewModel.endOnboarding() }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.accentColor.opacity(0.10))
     }
 
     private var transcript: some View {

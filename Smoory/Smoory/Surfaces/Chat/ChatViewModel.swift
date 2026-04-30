@@ -24,6 +24,11 @@ final class ChatViewModel {
     private(set) var pendingActions: [String: PendingAction] = [:]
     let modelContainer: ModelContainer
 
+    /// True while the user is in the first-run onboarding conversation. When true, the
+    /// system prompt is augmented to nudge Claude into onboarding behavior (no tool calls,
+    /// guided topic walk).
+    private(set) var onboardingMode: Bool = false
+
     private let orchestrator: Orchestrator
     let hema: HemaService
     private let chatSessionID: UUID
@@ -53,6 +58,28 @@ Use write_memory_fact ONLY for explicit, durable factual statements the user mak
 The compact summaries below are always-on. For specific past facts, names, or events, use retrieve_memory with a focused query.
 
 Be conversational, concise, and honest about what you don't know. If memory retrieval returns nothing relevant, say so.
+"""
+
+    private let onboardingAddendum = """
+
+ONBOARDING MODE — IMPORTANT:
+You are walking the user through first-run onboarding. Walk through these topics conversationally, one at a time, without rushing:
+
+1. Roles — facets of life ("employed at X", "running a side business", "freelance")
+2. Goals — what they're working toward (read more, ship X, exercise more)
+3. Projects — concrete efforts under goals
+4. Key people — partner, family, close colleagues, frequent collaborators
+5. Infrastructure — services and tools they rely on (email, calendar, code host)
+6. Working hours — when they're focused vs. off
+7. Communication preferences — how they like Smoory to talk
+
+Bridge naturally between topics. Don't ask all at once.
+
+When you paraphrase to confirm understanding, use questions or short acknowledgments rather than restatements. Say "Got it." or "Makes sense — what about...?" instead of "So you're working on Apollo as a side project." This prevents your paraphrase from being re-extracted as a duplicate candidate by the structuring layer.
+
+Do NOT call create_todo or write_memory_fact during onboarding. The structuring layer will surface candidates from what the user says, and the user will review them in the Feed at the end.
+
+When you sense the user has covered the basics, or the user signals they're done, say something like: "I think we have a good starting picture. Take a look at the Feed when you're ready and confirm the items I picked up."
 """
 
     init(
@@ -88,6 +115,13 @@ Be conversational, concise, and honest about what you don't know. If memory retr
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, state != .sending else { return }
 
+        // Slash command intercept: explicit onboarding end.
+        if trimmed.lowercased() == "/end onboarding" || trimmed.lowercased() == "/finish onboarding" {
+            draft = ""
+            endOnboarding()
+            return
+        }
+
         let userTurn = Turn(id: UUID(), speaker: .user, text: trimmed, usedToolNames: nil)
         turns.append(userTurn)
         draft = ""
@@ -107,7 +141,7 @@ Be conversational, concise, and honest about what you don't know. If memory retr
 
         do {
             let result = try await orchestrator.send(
-                systemPrompt: systemPrompt,
+                systemPrompt: effectiveSystemPrompt,
                 history: history,
                 userMessage: trimmed,
                 modelTier: .balanced,
@@ -176,6 +210,35 @@ Be conversational, concise, and honest about what you don't know. If memory retr
             ))
         }
         state = .idle
+    }
+
+    // MARK: - Onboarding
+
+    private var effectiveSystemPrompt: String {
+        onboardingMode ? systemPrompt + onboardingAddendum : systemPrompt
+    }
+
+    /// Called by the first-launch welcome sheet's Start button.
+    /// Posts a synthetic assistant greeting if the conversation is empty so the user
+    /// doesn't have to type first.
+    func startOnboarding() {
+        onboardingMode = true
+        if turns.isEmpty {
+            let greeting = Turn(
+                id: UUID(),
+                speaker: .assistant,
+                text: "Hey 👋 Welcome to Smoory. Let's spend a little time getting me up to speed on you — your roles, goals, projects, key people, and the tools you use. We'll go through one topic at a time, no rush. To start: what do you spend most of your time on these days?",
+                usedToolNames: nil
+            )
+            turns.append(greeting)
+        }
+    }
+
+    /// Called by the slash command, the onboarding banner's Finish button, or the welcome
+    /// sheet's Skip button (the latter without ever entering inProgress).
+    func endOnboarding() {
+        onboardingMode = false
+        OnboardingStateStore.set(.completed)
     }
 
     // MARK: - PendingAction transitions (called from PendingActionCard)
