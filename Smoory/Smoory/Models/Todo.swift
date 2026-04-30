@@ -17,8 +17,22 @@ final class Todo {
     var deferralCount: Int = 0
     var source: TodoSource = TodoSource.manual
     var relatedPeople: [Person] = []
+    var parentTodo: Todo?
+    @Relationship(deleteRule: .cascade, inverse: \Todo.parentTodo)
+    var subtasks: [Todo] = []
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
     init() {}
+}
+
+extension Todo {
+    /// (completed, total) — empty parent returns (0, 0).
+    var subtaskProgress: (completed: Int, total: Int) {
+        let total = subtasks.count
+        let completed = subtasks.filter(\.isCompleted).count
+        return (completed, total)
+    }
+
+    var isTopLevel: Bool { parentTodo == nil }
 }

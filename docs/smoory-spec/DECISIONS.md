@@ -549,6 +549,8 @@ Keep this document up to date as decisions evolve. Future-you (and Claude Code) 
 
 **Source:** User observation during Phase 2 usage period, after milestone 2.2b was committed and chat-driven todo creation was working. Spec amended before milestone 2.2c began so the create_todo tool's design implicitly acknowledges the upcoming Todo subtask model.
 
+**Subtask deletion cascades from parent (added 2026-04-30):** Deleting a parent Todo deletes all its subtasks via `@Relationship(deleteRule: .cascade)`. Reason: subtasks have no meaning detached from their parent; the alternative (orphaned subtasks promoted to top-level) silently surfaces stale work and breaks the user's mental model of the parent-as-unit. Implemented in milestone 2.2.5a alongside the schema migration.
+
 ---
 
 End of spec. Time to build.

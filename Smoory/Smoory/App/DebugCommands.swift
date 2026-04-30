@@ -1,8 +1,10 @@
 import AppKit
+import SwiftData
 import SwiftUI
 
 struct DebugCommands: Commands {
     let hemaState: HemaState
+    let modelContainer: ModelContainer
 
     var body: some Commands {
         CommandMenu("Debug") {
@@ -72,6 +74,45 @@ struct DebugCommands: Commands {
                     } catch {
                         print("[hema] Retrieval test failed to run: \(error)")
                     }
+                }
+            }
+
+            Button("Seed test todo with subtasks") {
+                let context = ModelContext(modelContainer)
+                let saturday = Calendar.current.nextDate(
+                    after: Date(),
+                    matching: DateComponents(weekday: 7),
+                    matchingPolicy: .nextTime
+                ) ?? Date().addingTimeInterval(86400 * 3)
+
+                let parent = Todo()
+                parent.title = "Plan birthday party"
+                parent.dueDate = saturday
+
+                let s1 = Todo()
+                s1.title = "Send invitations"
+                s1.isCompleted = true
+                s1.completedAt = Date()
+                s1.parentTodo = parent
+
+                let s2 = Todo()
+                s2.title = "Order cake"
+                s2.parentTodo = parent
+
+                let s3 = Todo()
+                s3.title = "Pick up balloons"
+                s3.parentTodo = parent
+
+                context.insert(parent)
+                context.insert(s1)
+                context.insert(s2)
+                context.insert(s3)
+
+                do {
+                    try context.save()
+                    print("[debug] seeded parent + 3 subtasks (parent id=\(parent.id))")
+                } catch {
+                    print("[debug] seed failed: \(error)")
                 }
             }
 

@@ -63,7 +63,7 @@ enum CreateTodoTool: Tool {
             role = allRoles.first(where: { $0.slug == slug })
         }
 
-        let dueDate: Date? = input.due_date.flatMap { try? Date($0, strategy: .iso8601) }
+        let dueDate: Date? = input.due_date.flatMap(Self.parseDueDate)
 
         let priority: TodoPriority = {
             switch input.priority?.lowercased() {
@@ -138,7 +138,7 @@ enum CreateTodoTool: Tool {
     private static func buildSecondary(from input: Input) -> String? {
         var parts: [String] = []
         if let dueDateStr = input.due_date,
-           let due = try? Date(dueDateStr, strategy: .iso8601) {
+           let due = Self.parseDueDate(dueDateStr) {
             parts.append(Self.formatDueDate(due))
         }
         let prio = (input.priority?.lowercased()).flatMap { p -> String? in
@@ -152,6 +152,20 @@ enum CreateTodoTool: Tool {
             parts.append("for \(role)")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
+    }
+
+    /// Accepts full ISO8601 datetime ("2026-05-01T00:00:00Z"), date-only ("2026-05-01"),
+    /// and a couple of common slack formats Claude tends to emit.
+    static func parseDueDate(_ s: String) -> Date? {
+        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        if trimmed.isEmpty { return nil }
+
+        if let d = try? Date(trimmed, strategy: .iso8601) { return d }
+
+        let dateOnly = Date.ISO8601FormatStyle().year().month().day()
+        if let d = try? dateOnly.parse(trimmed) { return d }
+
+        return nil
     }
 
     private static func formatDueDate(_ date: Date) -> String {

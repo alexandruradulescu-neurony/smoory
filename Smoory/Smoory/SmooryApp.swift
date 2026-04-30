@@ -64,7 +64,7 @@ struct SmooryApp: App {
         .modelContainer(sharedModelContainer)
         .defaultSize(width: 1100, height: 700)
         .commands {
-            DebugCommands(hemaState: hemaState)
+            DebugCommands(hemaState: hemaState, modelContainer: sharedModelContainer)
         }
     }
 

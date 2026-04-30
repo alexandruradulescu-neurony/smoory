@@ -67,14 +67,15 @@ enum GetOpenTodosTool: Tool {
         descriptor.fetchLimit = 500
         let allTodos = (try? modelContext.fetch(descriptor)) ?? []
 
-        var filtered = allTodos.filter { !$0.isCompleted }
+        // Top-level only: subtasks must not leak into chat replies as flat items.
+        var filtered = allTodos.filter { !$0.isCompleted && $0.parentTodo == nil }
 
         if let roleSlug = input.role {
             filtered = filtered.filter { $0.role?.slug == roleSlug }
         }
 
         if let dueBeforeStr = input.dueBefore,
-           let dueBefore = try? Date(dueBeforeStr, strategy: .iso8601) {
+           let dueBefore = CreateTodoTool.parseDueDate(dueBeforeStr) {
             filtered = filtered.filter { todo in
                 guard let due = todo.dueDate else { return false }
                 return due < dueBefore

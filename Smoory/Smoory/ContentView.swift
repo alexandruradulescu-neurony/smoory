@@ -20,6 +20,7 @@ struct ContentView: View {
         } detail: {
             switch selection {
             case .feed: FeedView()
+            case .todos: TodosView()
             case .chat: ChatView()
             case .memory: MemoryView()
             case .settings: SettingsView()
