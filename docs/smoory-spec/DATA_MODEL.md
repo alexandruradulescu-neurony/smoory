@@ -161,6 +161,8 @@ The day-to-day tactical unit. Most numerous entity in the system.
 - `relatedPeople: [Person]` — people referenced (e.g. "call Maria")
 - `parentTodo: Todo?` — for subtasks, points to the parent Todo. `nil` for top-level todos.
 - `subtasks: [Todo]` — children. Empty for childless todos AND for subtasks themselves (one level of nesting only).
+- `isArchived: Bool` — soft-delete flag set by `delete_todo`. Archived todos are filtered out of the surface and out of `get_open_todos`. See `DECISIONS.md` "Soft-delete via isArchived."
+- `archivedAt: Date?` — set when `isArchived` flips to true.
 
 **Behavior notes:**
 - Smoory can propose, user confirms (tier 1).
@@ -322,7 +324,7 @@ Smoory's surfaced output. Every annotation, suggestion, alert, brief, or review 
 - `actedUponAt: Date?`
 - `dismissedAt: Date?`
 - `archivedAt: Date?`
-- `provenance: FeedItemProvenance` — info about which loop produced this item, for debugging
+- `provenance: FeedItemProvenance?` — info about which loop produced this item, for debugging. Optional in v1 because no FeedItem producers exist yet that can guarantee provenance; Phase 3 producers will populate it.
 
 **Sub-types:**
 
@@ -343,22 +345,14 @@ enum ConfirmationTier { case tier1_quick, tier2_review, tier3_dialog }
 
 ---
 
-## ChatMessage
+## Chat persistence
 
-A message in the conversational thread.
+**Chat messages are not stored in SwiftData.** Phase 1 included a `ChatMessage` `@Model` placeholder; that entity was never written by any code path and was removed in milestone 2.5c. Chat history lives in two places:
 
-**Fields:**
-- `role: ChatRole` — `.user, .assistant, .system`
-- `content: String`
-- `attachments: [CaptureItem]` — if user dropped files
-- `toolCalls: [ToolCall]` — if assistant called tools in this message
-- `toolResults: [ToolResult]` — outputs from those calls
-- `inlineProposedActions: [ProposedAction]` — cards rendered in the message
-- `relatedFeedItem: FeedItem?` — if chat was opened from a feed item
+- **Visible session history:** `ChatViewModel.turns: [Turn]` — in-memory only, lifetime of the app's chat session.
+- **Long-term memory:** hema's `MemoryTurn` table (see `MEMORY.md`). Every user and assistant turn is persisted there with embeddings for semantic retrieval.
 
-**Notes:**
-- All messages contribute to hema's vector memory after the session.
-- Hema's compact memory is regenerated periodically from the message history.
+Tool-call detail is currently surfaced via the `Used:` subtitle on assistant turns and is not persisted beyond hema's content-text. If finer-grained tool-call audit becomes a need, it would be added to `MemoryTurn.metadata` (currently dropped) or to a new dedicated table — not as a SwiftData entity.
 
 ---
 
@@ -387,6 +381,33 @@ A learned preference Smoory has proposed and the user has confirmed. Visible and
 - `confirmed: Bool` — true if user accepted; false for proposed-but-pending
 - `proposedAt: Date`
 - `confirmedAt: Date?`
+
+---
+
+## CandidateWrite
+
+The structuring layer's queue of candidate writes pending user review. Produced by `StructuringService` after each chat turn (Haiku call), confirmed/rejected via the Feed surface, dispatched to target entities by `CandidateAcceptor`.
+
+**Fields:**
+- `id: UUID`
+- `createdAt: Date`
+- `type: CandidateType` — enum: `.goal, .project, .todo, .person, .infrastructure, .availability, .toneObservation, .fact`
+- `content: String` — the record-ready third-person statement from Haiku
+- `editedContent: String` — optional user edit pre-confirm; effective content falls back to `content` when empty
+- `confidence: Double` — 0.0–1.0; only candidates ≥0.5 are queued (lower discarded)
+- `userPhrase: String` — exact words from the user that triggered extraction
+- `expiresAt: Date?` — for time-bounded candidates (availability)
+- `status: CandidateStatus` — `.pending, .confirmed, .rejected, .autoApplied`
+- `sourceTurnID: UUID?` — link to the hema MemoryTurn that produced it (nullable in v1)
+- `sourceSessionID: UUID?` — chat session
+- `reviewedAt: Date?` — set when status moves out of `.pending`
+- `rejectionReason: String?` — captured at reject time (informs future negative training, not yet used)
+- `resultEntityID: UUID?` — the entity created on confirm (Goal, Todo, Person, ...) or written fact id
+
+**Behavior notes:**
+- `status == .autoApplied` is reserved for future high-confidence-skip-review behavior; v1 always queues regardless of confidence.
+- Acceptance dispatch per type is in `Pipeline/Structuring/CandidateAcceptor.swift`.
+- `availability` and `toneObservation` candidates write to hema as facts (with tags `availability` / `tone`) until dedicated entities exist; see `PHASE_3_NOTES.md` and `PHASE_4_NOTES.md`.
 
 ---
 

@@ -92,6 +92,25 @@ enum HemaSchema {
                 "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
                 params: [1, Date().formatted(.iso8601)]
             )
+        },
+
+        // 2: drop unused metadata_json column. The field was never populated by any writer
+        // and the COALESCE workaround in milestone 2.3 silently changed its read semantic
+        // from nil to "". Code no longer references the column. Wrapped in try-catch
+        // because ALTER TABLE DROP COLUMN requires SQLite 3.35+; on older bundled SQLite
+        // the column stays as a harmless ghost.
+        Migration(version: 2, description: "drop unused metadata_json column from memory_turns") { db in
+            do {
+                try await db.execute("ALTER TABLE memory_turns DROP COLUMN metadata_json")
+            } catch {
+                let version = (try? await db.query("SELECT sqlite_version()", params: []))?
+                    .first?["sqlite_version()"] as? String ?? "unknown"
+                print("[hema] migration 2: DROP COLUMN unsupported (SQLite \(version)), leaving column as ghost: \(error)")
+            }
+            try await db.execute(
+                "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+                params: [2, Date().formatted(.iso8601)]
+            )
         }
     ]
 

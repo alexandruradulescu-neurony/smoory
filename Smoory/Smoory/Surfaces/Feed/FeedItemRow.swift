@@ -15,16 +15,16 @@ struct FeedItemRow: View {
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.headline)
-                        .font(isExpanded ? .body : .callout)
+                        .font(.smoory_body)
                         .lineLimit(isExpanded ? nil : 1)
                     if isExpanded && !item.body.isEmpty {
                         Text(item.body)
-                            .font(.callout)
+                            .font(.smoory_body)
                             .foregroundStyle(.secondary)
                     }
                     HStack(spacing: 6) {
                         Text(kindLabel)
-                            .font(.caption2)
+                            .font(.smoory_micro)
                             .foregroundStyle(.tertiary)
                         Spacer()
                         if item.pinned {

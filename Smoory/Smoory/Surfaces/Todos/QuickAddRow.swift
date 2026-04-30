@@ -19,6 +19,7 @@ struct QuickAddRow: View {
 
             TextField("Quick add a todo", text: $title)
                 .textFieldStyle(.plain)
+                .font(.smoory_body)
                 .focused($isFocused)
                 .onSubmit { add() }
 
@@ -30,7 +31,7 @@ struct QuickAddRow: View {
                         .foregroundStyle(hasDueDate ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
                     if hasDueDate {
                         Text(dueDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                            .font(.caption2)
+                            .font(.smoory_micro)
                             .foregroundStyle(.secondary)
                     }
                 }

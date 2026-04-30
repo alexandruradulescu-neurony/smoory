@@ -27,7 +27,8 @@ enum CalendarServiceError: Error {
     case unknown(Error)
 }
 
-final class CalendarService: @unchecked Sendable {
+@MainActor
+final class CalendarService {
     // Heuristic starting points — tune after living with the behavior.
     private static let secondDayThresholdHour = 12   // before noon → today only
     private static let thirdDayThresholdHour = 15    // 12:00–15:00 → +tomorrow; 15:00+ → +day-after-tomorrow

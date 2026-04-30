@@ -10,23 +10,28 @@ enum CandidateAcceptor {
         modelContainer: ModelContainer,
         hema: HemaService
     ) async throws {
+        // Re-fetch in this context so mutations land in the same context we save.
+        // Mutating the @Bindable from FeedView's context and saving a different
+        // context loses the status flip — the candidate stays Pending in the UI.
         let context = ModelContext(modelContainer)
-        let body = candidate.effectiveContent
+        let candidateID = candidate.id
+        let descriptor = FetchDescriptor<CandidateWrite>(predicate: #Predicate { $0.id == candidateID })
+        guard let stored = try context.fetch(descriptor).first else { return }
 
-        switch candidate.type {
+        let body = stored.effectiveContent
+
+        switch stored.type {
         case .goal:
             let goal = Goal()
             goal.title = body
             context.insert(goal)
-            try context.save()
-            candidate.resultEntityID = goal.id
+            stored.resultEntityID = goal.id
 
         case .project:
             let project = Project()
             project.title = body
             context.insert(project)
-            try context.save()
-            candidate.resultEntityID = project.id
+            stored.resultEntityID = project.id
 
         case .todo:
             let todo = try CreateTodoTool.performAction(
@@ -34,21 +39,19 @@ enum CandidateAcceptor {
                 source: .userQuickadd,
                 modelContainer: modelContainer
             )
-            candidate.resultEntityID = todo.id
+            stored.resultEntityID = todo.id
 
         case .person:
             let person = Person()
             person.displayName = body
             context.insert(person)
-            try context.save()
-            candidate.resultEntityID = person.id
+            stored.resultEntityID = person.id
 
         case .infrastructure:
             let infra = Infrastructure()
             infra.name = body
             context.insert(infra)
-            try context.save()
-            candidate.resultEntityID = infra.id
+            stored.resultEntityID = infra.id
 
         case .availability:
             // Stopgap (see PHASE_3_NOTES.md): no Availability/OffPeriod entity yet.
@@ -58,20 +61,20 @@ enum CandidateAcceptor {
                 body: body,
                 tags: ["availability"],
                 entitiesReferenced: [],
-                confidence: candidate.confidence,
+                confidence: stored.confidence,
                 userConfirmed: true,
                 createdAt: Date(),
-                expiresAt: candidate.expiresAt,
+                expiresAt: stored.expiresAt,
                 supersededBy: nil,
                 provenanceJSON: makeProvenanceJSON(
                     sourceKind: "structuring_layer",
-                    candidate: candidate
+                    candidate: stored
                 ),
                 vector: nil,
                 isPrivate: false
             )
             try await hema.writeFact(fact)
-            candidate.resultEntityID = fact.id
+            stored.resultEntityID = fact.id
 
         case .toneObservation:
             // Stopgap (see PHASE_4_NOTES.md): tag-as-tone fact until ToneProfile flow lands.
@@ -80,20 +83,20 @@ enum CandidateAcceptor {
                 body: body,
                 tags: ["tone"],
                 entitiesReferenced: [],
-                confidence: candidate.confidence,
+                confidence: stored.confidence,
                 userConfirmed: true,
                 createdAt: Date(),
                 expiresAt: nil,
                 supersededBy: nil,
                 provenanceJSON: makeProvenanceJSON(
                     sourceKind: "structuring_layer",
-                    candidate: candidate
+                    candidate: stored
                 ),
                 vector: nil,
                 isPrivate: false
             )
             try await hema.writeFact(fact)
-            candidate.resultEntityID = fact.id
+            stored.resultEntityID = fact.id
 
         case .fact:
             let fact = SemanticFact(
@@ -101,24 +104,24 @@ enum CandidateAcceptor {
                 body: body,
                 tags: [],
                 entitiesReferenced: [],
-                confidence: candidate.confidence,
+                confidence: stored.confidence,
                 userConfirmed: true,
                 createdAt: Date(),
-                expiresAt: candidate.expiresAt,
+                expiresAt: stored.expiresAt,
                 supersededBy: nil,
                 provenanceJSON: makeProvenanceJSON(
                     sourceKind: "structuring_layer",
-                    candidate: candidate
+                    candidate: stored
                 ),
                 vector: nil,
                 isPrivate: false
             )
             try await hema.writeFact(fact)
-            candidate.resultEntityID = fact.id
+            stored.resultEntityID = fact.id
         }
 
-        candidate.status = .confirmed
-        candidate.reviewedAt = Date()
+        stored.status = .confirmed
+        stored.reviewedAt = Date()
         try context.save()
     }
 
@@ -140,10 +143,14 @@ enum CandidateAcceptor {
 
     private static func makeProvenanceJSON(sourceKind: String, candidate: CandidateWrite) -> String {
         let extractedAt = Date().formatted(.iso8601)
+        let confirmedAt = (candidate.reviewedAt ?? Date()).formatted(.iso8601)
         let sessionPart = candidate.sourceSessionID
             .map { #""source_session_id":"\#($0.uuidString)","# }
             ?? ""
-        return #"{"source_kind":"\#(sourceKind)",\#(sessionPart)"extracted_at":"\#(extractedAt)","extracting_model":"claude-haiku-4-5","confidence":\#(candidate.confidence),"user_confirmed":true,"user_phrase":"\#(escape(candidate.userPhrase))"}"#
+        let extractingModel = candidate.extractingModel.isEmpty
+            ? AIProviderStore.current().modelID(for: .fast)
+            : candidate.extractingModel
+        return #"{"source_kind":"\#(sourceKind)",\#(sessionPart)"extracted_at":"\#(extractedAt)","extracting_model":"\#(escape(extractingModel))","confidence":\#(candidate.confidence),"user_confirmed":true,"user_confirmed_at":"\#(confirmedAt)","user_phrase":"\#(escape(candidate.userPhrase))"}"#
     }
 
     private static func escape(_ s: String) -> String {

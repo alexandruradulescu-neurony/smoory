@@ -86,14 +86,17 @@ When you sense the user has covered the basics, or the user signals they're done
         modelContainer: ModelContainer,
         hema: HemaService,
         chatSessionID: UUID,
-        client: LLMClient = AnthropicClient(),
-        calendarService: CalendarService = CalendarService()
+        client: LLMClient = RoutingLLMClient(),
+        calendarService: CalendarService? = nil
     ) {
         self.modelContainer = modelContainer
         self.hema = hema
         self.chatSessionID = chatSessionID
+        // CalendarService is @MainActor — construct inside this @MainActor init so the
+        // default-arg evaluation doesn't cross actor boundaries.
+        let resolvedCalendar = calendarService ?? CalendarService()
         let services = ToolServices(
-            calendarService: calendarService,
+            calendarService: resolvedCalendar,
             modelContainer: modelContainer,
             hema: hema
         )
@@ -189,14 +192,6 @@ When you sense the user has covered the basics, or the user signals they're done
                     id: UUID(),
                     speaker: .errorBubble,
                     text: Self.friendlyMessage(for: error),
-                    usedToolNames: nil
-                ))
-            case .toolError(let str):
-                removePlaceholder(id: assistantTurnID)
-                turns.append(Turn(
-                    id: UUID(),
-                    speaker: .errorBubble,
-                    text: "Tool execution failed: \(str)",
                     usedToolNames: nil
                 ))
             }
@@ -351,7 +346,6 @@ When you sense the user has covered the basics, or the user signals they're done
                 chatSessionID: chatSessionID,
                 role: .user,
                 content: userMessage,
-                metadataJSON: nil,
                 vector: nil
             ))
             if !assistantReply.isEmpty {
@@ -361,7 +355,6 @@ When you sense the user has covered the basics, or the user signals they're done
                     chatSessionID: chatSessionID,
                     role: .assistant,
                     content: assistantReply,
-                    metadataJSON: nil,
                     vector: nil
                 ))
             }
@@ -439,19 +432,20 @@ When you sense the user has covered the basics, or the user signals they're done
 
     private static func friendlyMessage(for error: Error) -> String {
         if let llmError = error as? LLMClientError {
+            let provider = AIProviderStore.current().displayName
             switch llmError {
             case .missingAPIKey:
-                return "No Anthropic API key configured. Add one in Settings."
+                return "No \(provider) API key configured. Add one in Settings."
             case .unauthorized:
-                return "The API key in Settings looks invalid. Replace it in Settings."
+                return "The \(provider) API key in Settings looks invalid. Replace it in Settings."
             case .rateLimited:
-                return "Anthropic is rate-limiting requests. Try again in a moment."
+                return "\(provider) is rate-limiting requests. Try again in a moment."
             case .server(let status, _):
-                return "Anthropic returned a server error (\(status)). Try again shortly."
+                return "\(provider) returned a server error (\(status)). Try again shortly."
             case .network:
                 return "Network problem. Check your connection and try again."
             case .invalidResponse, .decoding:
-                return "Got an unexpected response from Anthropic. This is likely a Smoory bug."
+                return "Got an unexpected response from \(provider). This is likely a Smoory bug."
             case .unknown:
                 return "Something went wrong. Try again."
             }
@@ -492,7 +486,7 @@ extension ChatViewModel: OrchestratorDelegate {
                 if let continuation = self.pendingContinuations.removeValue(forKey: toolUseId) {
                     continuation.resume(returning: ToolOutput(
                         toolUseId: toolUseId,
-                        content: #"{"status":"cancelled"}"#,
+                        content: OrchestratorContract.cancelledMarkerJSON,
                         isError: true
                     ))
                 }

@@ -5,7 +5,9 @@ struct FactsListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            searchBar
+            SearchBar(text: $viewModel.searchText, placeholder: "Search facts (body or tags)")
+                .padding(.horizontal)
+                .padding(.top, 4)
             filterPills
             statusBanner
 
@@ -34,53 +36,28 @@ struct FactsListView: View {
         }
     }
 
-    private var searchBar: some View {
-        HStack {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search facts (body or tags)", text: $viewModel.searchText)
-                .textFieldStyle(.plain)
-            if !viewModel.searchText.isEmpty {
-                Button { viewModel.searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(8)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal)
-        .padding(.top, 4)
-    }
-
     private var filterPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                Picker(viewModel.ageFilter.title, selection: $viewModel.ageFilter) {
-                    ForEach(FactsListViewModel.AgeFilter.allCases) { f in
-                        Text(f.title).tag(f)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(viewModel.ageFilter == .all ? .secondary : .accentColor)
+                FilterPicker(
+                    selected: $viewModel.ageFilter,
+                    titleProvider: { $0.title },
+                    isAllCase: { $0 == .all }
+                )
                 .onChange(of: viewModel.ageFilter) { _, _ in Task { await viewModel.load() } }
 
-                Picker(viewModel.confidenceFilter.title, selection: $viewModel.confidenceFilter) {
-                    ForEach(FactsListViewModel.ConfidenceFilter.allCases) { f in
-                        Text(f.title).tag(f)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(viewModel.confidenceFilter == .all ? .secondary : .accentColor)
+                FilterPicker(
+                    selected: $viewModel.confidenceFilter,
+                    titleProvider: { $0.title },
+                    isAllCase: { $0 == .all }
+                )
                 .onChange(of: viewModel.confidenceFilter) { _, _ in Task { await viewModel.load() } }
 
-                Picker(viewModel.confirmationFilter.title, selection: $viewModel.confirmationFilter) {
-                    ForEach(FactsListViewModel.ConfirmationFilter.allCases) { f in
-                        Text(f.title).tag(f)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(viewModel.confirmationFilter == .all ? .secondary : .accentColor)
+                FilterPicker(
+                    selected: $viewModel.confirmationFilter,
+                    titleProvider: { $0.title },
+                    isAllCase: { $0 == .all }
+                )
 
                 Menu(tagButtonLabel) {
                     ForEach(viewModel.availableTags, id: \.self) { tag in
@@ -102,6 +79,7 @@ struct FactsListView: View {
                     }
                 }
                 .tint(viewModel.selectedTags.isEmpty ? .secondary : .accentColor)
+                .font(.smoory_caption)
             }
             .padding(.horizontal)
             .padding(.vertical, 6)
@@ -122,7 +100,7 @@ struct FactsListView: View {
         if active || displayed != total {
             HStack {
                 Text("Showing \(displayed) of \(total) facts")
-                    .font(.caption)
+                    .font(.smoory_caption)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Toggle("Show private", isOn: $viewModel.showPrivate)
@@ -145,19 +123,27 @@ struct FactsListView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "tray").font(.system(size: 42)).foregroundStyle(.tertiary)
-            if viewModel.hasActiveFilters {
-                Text("No facts match your filters").font(.headline).foregroundStyle(.secondary)
-            } else {
-                Text("Hema has no facts yet").font(.headline).foregroundStyle(.secondary)
-                Text("Talk to Smoory and high-confidence facts will be saved here.")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-            }
+        if !viewModel.searchText.isEmpty {
+            EmptyState(
+                symbol: "tray",
+                headline: "No facts match \u{201C}\(viewModel.searchText)\u{201D}.",
+                detail: nil
+            )
+            .listRowBackground(Color.clear)
+        } else if viewModel.hasActiveFilters {
+            EmptyState(
+                symbol: "tray",
+                headline: "No facts match your filters.",
+                detail: nil
+            )
+            .listRowBackground(Color.clear)
+        } else {
+            EmptyState(
+                symbol: "tray",
+                headline: "No facts yet.",
+                detail: "Smoory will save things it learns as you talk."
+            )
+            .listRowBackground(Color.clear)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
-        .listRowBackground(Color.clear)
     }
 }

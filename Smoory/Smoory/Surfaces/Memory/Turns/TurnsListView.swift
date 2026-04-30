@@ -6,7 +6,9 @@ struct TurnsListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            searchBar
+            SearchBar(text: $viewModel.searchText, placeholder: "Search conversation turns")
+                .padding(.horizontal)
+                .padding(.top, 4)
             filterPills
             statusBanner
 
@@ -41,44 +43,21 @@ struct TurnsListView: View {
         }
     }
 
-    private var searchBar: some View {
-        HStack {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search conversation turns", text: $viewModel.searchText)
-                .textFieldStyle(.plain)
-            if !viewModel.searchText.isEmpty {
-                Button { viewModel.searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(8)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal)
-        .padding(.top, 4)
-    }
-
     private var filterPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                Picker(viewModel.dateRangeFilter.title, selection: $viewModel.dateRangeFilter) {
-                    ForEach(TurnsListViewModel.DateRangeFilter.allCases) { f in
-                        Text(f.title).tag(f)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(viewModel.dateRangeFilter == .all ? .secondary : .accentColor)
+                FilterPicker(
+                    selected: $viewModel.dateRangeFilter,
+                    titleProvider: { $0.title },
+                    isAllCase: { $0 == .all }
+                )
                 .onChange(of: viewModel.dateRangeFilter) { _, _ in Task { await viewModel.load() } }
 
-                Picker(viewModel.roleFilter.title, selection: $viewModel.roleFilter) {
-                    ForEach(TurnsListViewModel.RoleFilter.allCases) { f in
-                        Text(f.title).tag(f)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(viewModel.roleFilter == .all ? .secondary : .accentColor)
+                FilterPicker(
+                    selected: $viewModel.roleFilter,
+                    titleProvider: { $0.title },
+                    isAllCase: { $0 == .all }
+                )
                 .onChange(of: viewModel.roleFilter) { _, _ in Task { await viewModel.load() } }
             }
             .padding(.horizontal)
@@ -92,7 +71,7 @@ struct TurnsListView: View {
         let total = viewModel.allTurns.count
         if viewModel.hasActiveFilters || displayed != total {
             Text("Showing \(displayed) of \(total) turns")
-                .font(.caption)
+                .font(.smoory_caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
@@ -106,9 +85,9 @@ struct TurnsListView: View {
                 .foregroundStyle(.tertiary)
                 .imageScale(.small)
             Text("Session \(String(sessionID.uuidString.prefix(8)))")
-                .font(.headline)
+                .font(.smoory_heading)
             Text(FactRow.relativeAge(latestAt))
-                .font(.caption)
+                .font(.smoory_caption)
                 .foregroundStyle(.tertiary)
             Spacer()
         }
@@ -117,21 +96,27 @@ struct TurnsListView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 42))
-                .foregroundStyle(.tertiary)
-            if viewModel.hasActiveFilters {
-                Text("No turns match your filters").font(.headline).foregroundStyle(.secondary)
-            } else {
-                Text("No conversation turns yet").font(.headline).foregroundStyle(.secondary)
-                Text("Send a message in Chat — turns are recorded as they happen.")
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
-            }
+        if !viewModel.searchText.isEmpty {
+            EmptyState(
+                symbol: "bubble.left.and.bubble.right",
+                headline: "No turns match \u{201C}\(viewModel.searchText)\u{201D}.",
+                detail: nil
+            )
+            .listRowBackground(Color.clear)
+        } else if viewModel.hasActiveFilters {
+            EmptyState(
+                symbol: "bubble.left.and.bubble.right",
+                headline: "No turns match your filters.",
+                detail: nil
+            )
+            .listRowBackground(Color.clear)
+        } else {
+            EmptyState(
+                symbol: "bubble.left.and.bubble.right",
+                headline: "No conversations yet.",
+                detail: "Start a chat — your messages are saved here."
+            )
+            .listRowBackground(Color.clear)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
-        .listRowBackground(Color.clear)
     }
 }

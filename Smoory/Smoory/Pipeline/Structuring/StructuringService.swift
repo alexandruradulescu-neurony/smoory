@@ -1,7 +1,8 @@
 import Foundation
 import SwiftData
 
-/// Runs the structuring-layer Haiku call after each chat turn and persists candidates.
+/// Runs the structuring-layer fast-tier LLM call after each chat turn and persists candidates.
+/// Provider is whatever AIProviderStore points to (Anthropic Haiku or DeepSeek chat).
 /// Best-effort: any failure is logged and silently swallowed; never disrupts chat.
 @MainActor
 final class StructuringService {
@@ -42,25 +43,53 @@ final class StructuringService {
                 tools: []
             )
         } catch {
-            print("[structuring] Haiku call failed: \(error)")
+            print("[structuring] fast-tier call failed: \(error)")
             return
         }
 
         guard let parsed = StructuringPrompt.parse(response.text) else {
+            StructuringFailureCounter.shared.increment()
             print("[structuring] could not parse response as JSON. Raw first 200: \(response.text.prefix(200))")
             return
         }
 
-        let kept = parsed.filter { $0.confidence >= Self.confidenceFloor }
+        // Defensive filter — the structuring LLM is told via the prompt to skip
+        // already-handled items, but it sometimes re-emits them anyway. Drop matches
+        // client-side so chat-created todos/facts can't reappear in the Feed.
+        let handledTodos = Set(alreadyHandled.createdTodoTitles.map(Self.normalize))
+        let handledFacts = Set(alreadyHandled.writtenFactBodies.map(Self.normalize))
+
+        let kept = parsed.filter { p in
+            guard p.confidence >= Self.confidenceFloor else { return false }
+            let normContent = Self.normalize(p.content)
+            let normPhrase = Self.normalize(p.userPhrase)
+            switch p.type {
+            case .todo:
+                return !handledTodos.contains(normContent)
+                    && !handledTodos.contains(normPhrase)
+            case .fact:
+                return !handledFacts.contains(normContent)
+                    && !handledFacts.contains(normPhrase)
+            default:
+                return true
+            }
+        }
         if kept.isEmpty {
             return
         }
 
+        let extractingModel = AIProviderStore.current().modelID(for: .fast)
+
         await persistCandidates(
             kept,
             chatSessionID: chatSessionID,
-            sourceTurnID: sourceTurnID
+            sourceTurnID: sourceTurnID,
+            extractingModel: extractingModel
         )
+    }
+
+    private static func normalize(_ s: String) -> String {
+        s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private func snapshotExistingEntities() async -> StructuringPrompt.Snapshot {
@@ -82,7 +111,8 @@ final class StructuringService {
     private func persistCandidates(
         _ parsed: [ParsedCandidate],
         chatSessionID: UUID,
-        sourceTurnID: UUID?
+        sourceTurnID: UUID?,
+        extractingModel: String
     ) async {
         let context = ModelContext(modelContainer)
         for p in parsed {
@@ -94,6 +124,7 @@ final class StructuringService {
             row.expiresAt = p.expiresAt
             row.sourceSessionID = chatSessionID
             row.sourceTurnID = sourceTurnID
+            row.extractingModel = extractingModel
             row.status = .pending
             context.insert(row)
         }

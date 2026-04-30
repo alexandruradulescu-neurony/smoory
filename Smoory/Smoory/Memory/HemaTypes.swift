@@ -27,8 +27,7 @@ struct MemoryTurn: Identifiable, Hashable, Sendable {
     let chatSessionID: UUID
     let role: Role
     let content: String
-    let metadataJSON: String?       // freeform JSON; opaque to hema
-    let vector: [Float]?            // nil in 2.1a (no embedder yet)
+    let vector: [Float]?            // populated when an embedder is configured
 }
 
 struct SemanticFact: Identifiable, Hashable, Sendable {

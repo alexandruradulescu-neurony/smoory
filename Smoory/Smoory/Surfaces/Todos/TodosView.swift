@@ -16,7 +16,9 @@ struct TodosView: View {
         NavigationStack(path: $navigationPath) {
             VStack(spacing: 0) {
                 QuickAddRow(modelContainer: modelContext.container)
-                searchBar
+                SearchBar(text: $viewModel.searchText, placeholder: "Search todos")
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
 
                 let groups = viewModel.groupedTodos(from: allTodos)
 
@@ -118,54 +120,33 @@ struct TodosView: View {
         }
     }
 
-    private var searchBar: some View {
-        HStack {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search todos", text: $viewModel.searchText)
-                .textFieldStyle(.plain)
-            if !viewModel.searchText.isEmpty {
-                Button {
-                    viewModel.searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(8)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-    }
-
     private func sectionHeader(for group: DueDateGroup, count: Int) -> some View {
         HStack(spacing: 6) {
             Circle().fill(group.color).frame(width: 8, height: 8)
-            Text(group.title).font(.headline)
-            Text("\(count)").foregroundStyle(.tertiary)
+            Text(group.title).font(.smoory_heading)
+            Text("\(count)").foregroundStyle(.tertiary).font(.smoory_caption)
             Spacer()
         }
         .padding(.vertical, 4)
     }
 
+    @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "checkmark.seal")
-                .font(.system(size: 48))
-                .foregroundStyle(.tertiary)
-            if viewModel.searchText.isEmpty {
-                Text("No open todos").font(.headline).foregroundStyle(.secondary)
-                Text("Add a todo above, or talk to Smoory in Chat.")
-                    .font(.subheadline).foregroundStyle(.tertiary)
-            } else {
-                Text("No todos matching '\(viewModel.searchText)'")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
+        if viewModel.searchText.isEmpty {
+            EmptyState(
+                symbol: "checkmark.seal",
+                headline: "No open todos.",
+                detail: "Add one above, or ask Smoory in Chat."
+            )
+            .listRowBackground(Color.clear)
+        } else {
+            EmptyState(
+                symbol: "checkmark.seal",
+                headline: "No todos match \u{201C}\(viewModel.searchText)\u{201D}.",
+                detail: nil
+            )
+            .listRowBackground(Color.clear)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
-        .listRowBackground(Color.clear)
     }
 
     // MARK: - Mutations

@@ -39,7 +39,6 @@ struct SmooryApp: App {
             Infrastructure.self,
             CaptureItem.self,
             FeedItem.self,
-            ChatMessage.self,
             Schedule.self,
             RuleAdjustment.self,
             CandidateWrite.self,
@@ -56,7 +55,7 @@ struct SmooryApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(\.dynamicTypeSize, .xLarge)
+                .environment(\.dynamicTypeSize, .xxLarge)
                 .environment(\.hemaState, hemaState)
                 .environment(\.chatSessionID, chatSessionID)
                 .environment(\.chatViewModel, chatViewModel)

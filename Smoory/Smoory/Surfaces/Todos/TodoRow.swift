@@ -18,7 +18,7 @@ struct TodoRow: View {
 
             NavigationLink(value: todo.id) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(todo.title).font(.body)
+                    Text(todo.title).font(.smoory_body)
 
                     HStack(spacing: 6) {
                         if let dueDate = todo.dueDate {
@@ -50,6 +50,6 @@ struct TodoRow: View {
                 .buttonStyle(.borderless)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
 }

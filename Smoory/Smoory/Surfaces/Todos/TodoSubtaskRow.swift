@@ -19,7 +19,7 @@ struct TodoSubtaskRow: View {
             NavigationLink(value: subtask.id) {
                 HStack(spacing: 6) {
                     Text(subtask.title)
-                        .font(.callout)
+                        .font(.smoory_body)
                         .foregroundStyle(subtask.isCompleted ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
                         .strikethrough(subtask.isCompleted)
                     if let dueDate = subtask.dueDate {
@@ -31,6 +31,6 @@ struct TodoSubtaskRow: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 }

@@ -110,8 +110,10 @@ final class Orchestrator {
                     isError: exchange.result.isError
                 ))
                 // If Task was cancelled while awaiting confirmation, the delegate returns
-                // a {"status":"cancelled"} marker — surface as .userCancelled stop reason.
-                if exchange.result.content.contains("\"cancelled\"") && exchange.result.isError {
+                // the cancellation marker (see OrchestratorContract). Match exactly — substring
+                // matches are unsafe against tools whose error messages happen to contain "cancelled".
+                if exchange.result.content == OrchestratorContract.cancelledMarkerJSON
+                   && exchange.result.isError {
                     anyCancelled = true
                 }
             }
@@ -216,11 +218,17 @@ final class Orchestrator {
             """)
         }
 
-        let todayString = Date().formatted(.dateTime.weekday(.wide).year().month(.wide).day())
+        let now = Date()
+        let dateString = now.formatted(.dateTime.weekday(.wide).year().month(.wide).day())
+        let timeString = now.formatted(.dateTime.hour().minute())
+        let tz = TimeZone.current
+        let tzAbbrev = tz.abbreviation(for: now) ?? tz.identifier
         sections.append("""
-        <current_date>
-        Today is \(todayString). Resolve relative dates ("today", "tomorrow", "next Monday") against this.
-        </current_date>
+        <current_datetime>
+        Today is \(dateString). Local time is \(timeString) \(tzAbbrev) (\(tz.identifier)). \
+        Resolve relative dates ("today", "tomorrow", "next Monday") and relative times \
+        ("in an hour", "tonight") against this.
+        </current_datetime>
         """)
 
         sections.append("""
@@ -255,7 +263,14 @@ struct ToolExchange: Sendable {
 enum OrchestratorStopReason: Sendable {
     case naturalEnd
     case maxRoundsReached
-    case toolError(String)                    // Reserved for future use.
     case clientError(Error)
     case userCancelled                        // user navigated away mid-confirmation
+}
+
+/// Shared constants between Orchestrator (detector) and ChatViewModel (producer).
+/// Both sides reference these directly; no duplicated string literals.
+enum OrchestratorContract {
+    /// Tool result content emitted by the delegate's onCancel handler when a pending action's
+    /// awaiting Task gets cancelled. Orchestrator detects exact-match on this string + isError.
+    static let cancelledMarkerJSON = #"{"status":"cancelled"}"#
 }

@@ -3,7 +3,7 @@ import Foundation
 final class AnthropicClient: LLMClient, @unchecked Sendable {
     private static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
     private static let anthropicVersion = "2023-06-01"
-    private static let defaultMaxTokens = 1024
+    private static let defaultMaxTokens = 4096
 
     private let session: URLSession
     private let apiKeyProvider: @Sendable () -> String?

@@ -23,8 +23,11 @@ private struct FeedListContent: View {
     )
     private var pendingCandidates: [CandidateWrite]
 
+    // statusRaw 1 = .confirmed, 3 = .autoApplied. Both render under the "Confirmed"
+    // filter — they are facts/entities that have been applied to the system, the
+    // distinction being whether the user reviewed them (1) or the LLM wrote silently (3).
     @Query(
-        filter: #Predicate<CandidateWrite> { $0.statusRaw == 1 },
+        filter: #Predicate<CandidateWrite> { $0.statusRaw == 1 || $0.statusRaw == 3 },
         sort: \CandidateWrite.createdAt, order: .reverse
     )
     private var confirmedCandidates: [CandidateWrite]
@@ -47,30 +50,195 @@ private struct FeedListContent: View {
 
     @State private var expandedRowID: UUID?
     @State private var actionError: String?
+    @State private var calendar = FeedCalendarLoader()
 
     var body: some View {
         VStack(spacing: 0) {
-            searchBar
+            SearchBar(text: $viewModel.searchText, placeholder: "Search feed")
+                .padding(.horizontal)
+                .padding(.top, 4)
             filterPills
 
             let rows = currentRows
 
             List {
-                if rows.isEmpty {
-                    emptyState
-                } else {
-                    ForEach(rows) { row in
-                        rowView(for: row)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
-                            .listRowSeparator(.hidden)
+                calendarContent
+
+                Section {
+                    if rows.isEmpty {
+                        emptyState
+                    } else {
+                        ForEach(rows) { row in
+                            rowView(for: row)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                                .listRowSeparator(.hidden)
+                        }
                     }
-                }
-                if let err = actionError {
-                    Text(err).font(.caption).foregroundStyle(.red)
-                        .listRowBackground(Color.clear)
+                    if let err = actionError {
+                        Text(err).font(.smoory_caption).foregroundStyle(.red)
+                            .listRowBackground(Color.clear)
+                    }
+                } header: {
+                    candidatesSectionHeader
                 }
             }
             .listStyle(.inset)
+        }
+        .task { await calendar.load() }
+    }
+
+    @ViewBuilder
+    private var candidatesSectionHeader: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "tray")
+                .foregroundStyle(.tertiary)
+                .imageScale(.small)
+            Text("To review")
+                .font(.smoory_heading)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var calendarContent: some View {
+        switch calendar.state {
+        case .loading:
+            EmptyView()
+        case .ready(let sections):
+            calendarSections(sections)
+        case .denied:
+            calendarStatusRow(
+                symbol: "calendar.badge.exclamationmark",
+                title: "Calendar access required.",
+                detail: "Grant full access in System Settings to see your next 3 days here.",
+                actionTitle: "Open Settings",
+                action: { calendar.openCalendarPrivacySettings() }
+            )
+        case .restricted:
+            calendarStatusRow(
+                symbol: "lock.shield",
+                title: "Calendar access restricted.",
+                detail: "A system policy is blocking calendar reads on this Mac.",
+                actionTitle: nil,
+                action: nil
+            )
+        case .error(let message):
+            calendarStatusRow(
+                symbol: "exclamationmark.triangle",
+                title: "Couldn't load calendar.",
+                detail: message,
+                actionTitle: "Try again",
+                action: { Task { await calendar.load() } }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func calendarSections(_ sections: [FeedCalendarLoader.DaySection]) -> some View {
+        let filtered = FeedCalendarLoader.filtered(sections, query: viewModel.searchText)
+        let allEmpty = filtered.allSatisfy(\.isEmpty)
+        let hasActiveSearch = !viewModel.searchText.trimmingCharacters(in: .whitespaces).isEmpty
+
+        if allEmpty {
+            // Collapse a fully-empty window to a single neutral line. Keep the section
+            // header so calendar context still has its slot above the candidates.
+            Section {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(.tertiary)
+                        .imageScale(.small)
+                    Text(hasActiveSearch
+                         ? "No events match \u{201C}\(viewModel.searchText)\u{201D}."
+                         : "Nothing scheduled in the next 3 days.")
+                        .font(.smoory_caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            } header: {
+                calendarSectionHeader
+            }
+        } else {
+            ForEach(filtered) { section in
+                Section {
+                    if section.isEmpty {
+                        Text("Nothing scheduled.")
+                            .font(.smoory_caption)
+                            .foregroundStyle(.tertiary)
+                            .listRowSeparator(.hidden)
+                    } else {
+                        ForEach(section.allDay) { item in
+                            CalendarEventRow(item: item).listRowSeparator(.hidden)
+                        }
+                        ForEach(section.timed) { item in
+                            CalendarEventRow(item: item).listRowSeparator(.hidden)
+                        }
+                    }
+                } header: {
+                    daySectionHeader(section.header)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var calendarSectionHeader: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar")
+                .foregroundStyle(.tertiary)
+                .imageScale(.small)
+            Text("Next 3 days")
+                .font(.smoory_heading)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func daySectionHeader(_ header: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar")
+                .foregroundStyle(.tertiary)
+                .imageScale(.small)
+            Text(header).font(.smoory_heading)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func calendarStatusRow(
+        symbol: String,
+        title: String,
+        detail: String,
+        actionTitle: String?,
+        action: (() -> Void)?
+    ) -> some View {
+        Section {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: symbol)
+                    .foregroundStyle(.tertiary)
+                    .imageScale(.medium)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.smoory_body)
+                    Text(detail).font(.smoory_caption).foregroundStyle(.secondary)
+                    if let actionTitle, let action {
+                        Button(actionTitle, action: action)
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                            .padding(.top, 4)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.vertical, 6)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+        } header: {
+            calendarSectionHeader
         }
     }
 
@@ -105,43 +273,20 @@ private struct FeedListContent: View {
         return viewModel.compose(candidates: candidates, feedItems: items)
     }
 
-    private var searchBar: some View {
-        HStack {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search feed", text: $viewModel.searchText)
-                .textFieldStyle(.plain)
-            if !viewModel.searchText.isEmpty {
-                Button { viewModel.searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(8)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal)
-        .padding(.top, 4)
-    }
-
     private var filterPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                Picker(viewModel.statusFilter.title, selection: $viewModel.statusFilter) {
-                    ForEach(FeedStatusFilter.allCases) { f in
-                        Text(f.title).tag(f)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(viewModel.statusFilter == .pending ? .secondary : .accentColor)
+                FilterPicker(
+                    selected: $viewModel.statusFilter,
+                    titleProvider: { $0.title },
+                    isAllCase: { $0 == .pending }
+                )
 
-                Picker(viewModel.typeFilter.title, selection: $viewModel.typeFilter) {
-                    ForEach(FeedTypeFilter.allCases) { f in
-                        Text(f.title).tag(f)
-                    }
-                }
-                .pickerStyle(.menu)
-                .tint(viewModel.typeFilter == .all ? .secondary : .accentColor)
+                FilterPicker(
+                    selected: $viewModel.typeFilter,
+                    titleProvider: { $0.title },
+                    isAllCase: { $0 == .all }
+                )
             }
             .padding(.horizontal)
             .padding(.vertical, 6)
@@ -150,21 +295,11 @@ private struct FeedListContent: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "tray")
-                .font(.system(size: 42))
-                .foregroundStyle(.tertiary)
-            Text("Nothing to review.")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("Smoory will surface things here as they come up — emails, candidates, briefs, alerts.")
-                .font(.subheadline)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 60)
+        EmptyState(
+            symbol: "tray",
+            headline: "Nothing to review.",
+            detail: "Smoory will surface things here as they come up."
+        )
         .listRowBackground(Color.clear)
     }
 

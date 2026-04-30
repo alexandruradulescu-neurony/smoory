@@ -23,11 +23,11 @@ struct CandidateFeedRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(candidate.type.displayName)
-                            .font(.caption)
+                            .font(.smoory_caption)
                             .foregroundStyle(.secondary)
                         Text("·").foregroundStyle(.tertiary)
                         Text("\(Int((candidate.confidence * 100).rounded()))%")
-                            .font(.caption)
+                            .font(.smoory_caption)
                             .foregroundStyle(.tertiary)
                         Spacer()
                         statusBadge
@@ -39,24 +39,24 @@ struct CandidateFeedRow: View {
                             .lineLimit(1...4)
                     } else {
                         Text(candidate.effectiveContent)
-                            .font(isExpanded ? .body : .callout)
+                            .font(.smoory_body)
                             .lineLimit(isExpanded ? nil : 1)
                     }
 
                     if isExpanded || candidate.status != .pending {
                         if !candidate.userPhrase.isEmpty {
                             Text("User said: \"\(candidate.userPhrase)\"")
-                                .font(.caption)
+                                .font(.smoory_caption)
                                 .foregroundStyle(.tertiary)
                         }
                         if let exp = candidate.expiresAt {
                             Text("Expires: \(exp.formatted(.dateTime.month(.abbreviated).day().year()))")
-                                .font(.caption2)
+                                .font(.smoory_micro)
                                 .foregroundStyle(.tertiary)
                         }
                         if let reviewed = candidate.reviewedAt, candidate.status != .pending {
                             Text("Reviewed: \(reviewed.formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
-                                .font(.caption2)
+                                .font(.smoory_micro)
                                 .foregroundStyle(.tertiary)
                         }
                     }
@@ -112,17 +112,17 @@ struct CandidateFeedRow: View {
         switch candidate.status {
         case .confirmed:
             Label("Confirmed", systemImage: "checkmark.circle.fill")
-                .font(.caption2)
+                .font(.smoory_micro)
                 .foregroundStyle(.green)
                 .labelStyle(.titleAndIcon)
         case .rejected:
             Label("Rejected", systemImage: "xmark.circle.fill")
-                .font(.caption2)
+                .font(.smoory_micro)
                 .foregroundStyle(.tertiary)
                 .labelStyle(.titleAndIcon)
         case .autoApplied:
             Label("Auto-applied", systemImage: "bolt.circle")
-                .font(.caption2)
+                .font(.smoory_micro)
                 .foregroundStyle(.orange)
                 .labelStyle(.titleAndIcon)
         case .pending:

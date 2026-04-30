@@ -129,7 +129,7 @@ struct TodoDetailView: View {
     @ViewBuilder
     private func labeledField<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(label).font(.smoory_caption).foregroundStyle(.secondary)
             content()
         }
     }
@@ -147,7 +147,7 @@ struct TodoDetailView: View {
 
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Subtasks").font(.headline)
+                Text("Subtasks").font(.smoory_heading)
                 let progress = parent.subtaskProgress
                 if progress.total > 0 {
                     Text("\(progress.completed)/\(progress.total)")
@@ -159,7 +159,7 @@ struct TodoDetailView: View {
 
             if liveSubtasks.isEmpty {
                 Text("No subtasks yet.")
-                    .font(.callout)
+                    .font(.smoory_caption)
                     .foregroundStyle(.tertiary)
             } else {
                 ForEach(liveSubtasks) { sub in

@@ -13,7 +13,7 @@ struct FactRow: View {
                         .padding(.top, 2)
                 }
                 Text(fact.body)
-                    .font(.body)
+                    .font(.smoory_body)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -22,23 +22,23 @@ struct FactRow: View {
                 if !fact.tags.isEmpty {
                     ForEach(fact.tags.prefix(3), id: \.self) { tag in
                         Text(tag)
-                            .font(.caption2)
+                            .font(.smoory_micro)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Color.secondary.opacity(0.15))
                             .clipShape(Capsule())
                     }
                     if fact.tags.count > 3 {
                         Text("+\(fact.tags.count - 3)")
-                            .font(.caption2)
+                            .font(.smoory_micro)
                             .foregroundStyle(.tertiary)
                     }
                 }
                 Spacer()
                 Text(Self.relativeAge(fact.createdAt))
-                    .font(.caption2)
+                    .font(.smoory_micro)
                     .foregroundStyle(.tertiary)
                 Text(Self.confidenceLabel(fact.confidence))
-                    .font(.caption2)
+                    .font(.smoory_micro)
                     .foregroundStyle(.secondary)
                 if fact.userConfirmed {
                     Image(systemName: "checkmark.seal.fill")
@@ -47,7 +47,7 @@ struct FactRow: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
         .background(fact.isPrivate ? Color.secondary.opacity(0.05) : Color.clear)
     }
 

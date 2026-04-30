@@ -13,7 +13,6 @@ final class CaptureItem {
     var triageOutcome: String?
     var linkedTo: [CaptureLink] = []
     var pinnedToProject: Project?      // inverse of Project.notes — see DECISIONS.md decision 10
-    var attachedToMessage: ChatMessage?  // inverse of ChatMessage.attachments — see DECISIONS.md decision 10
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 

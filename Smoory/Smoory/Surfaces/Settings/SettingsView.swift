@@ -8,19 +8,76 @@ struct SettingsView: View {
         providerLabel: "Anthropic",
         placeholder: "sk-ant-…"
     )
+    @State private var deepseekVM = APIKeyViewModel(
+        service: KeychainService.deepseekAPIKeyService,
+        providerLabel: "DeepSeek",
+        placeholder: "sk-…"
+    )
     @State private var voyageVM = APIKeyViewModel(
         service: KeychainService.voyageAPIKeyService,
         providerLabel: "Voyage",
         placeholder: "pa-…"
     )
+    @State private var providerVM = ProviderViewModel()
+
+    @Bindable private var failureCounter = StructuringFailureCounter.shared
 
     var body: some View {
         Form {
-            Section("Anthropic API key") {
-                APIKeySectionContent(viewModel: anthropicVM)
+            Section("AI provider") {
+                Picker("Provider", selection: $providerVM.selected) {
+                    ForEach(AIProvider.allCases, id: \.self) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if providerVM.selected == .anthropic {
+                    APIKeySectionContent(viewModel: anthropicVM)
+                } else {
+                    APIKeySectionContent(viewModel: deepseekVM)
+                }
+
+                HStack {
+                    Button {
+                        Task { await providerVM.testConnection() }
+                    } label: {
+                        if providerVM.isTestingConnection {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("Testing…")
+                            }
+                        } else {
+                            Text("Test connection (current provider)")
+                        }
+                    }
+                    .disabled(providerVM.isTestingConnection)
+                    Spacer()
+                }
+                if let result = providerVM.lastTestResult {
+                    Text(result.message)
+                        .font(.smoory_caption)
+                        .foregroundStyle(result.success ? Color.green : Color.red)
+                }
             }
+
             Section("Voyage API key") {
                 APIKeySectionContent(viewModel: voyageVM)
+            }
+
+            Section("Diagnostics") {
+                HStack {
+                    Text("Structuring failures since launch")
+                    Spacer()
+                    Text("\(failureCounter.count)")
+                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                }
+                if failureCounter.count > 0 {
+                    Text("Failures occur when the AI provider returns malformed JSON. If this number grows fast, consider switching providers or refining the structuring prompt.")
+                        .font(.smoory_caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .formStyle(.grouped)
@@ -58,7 +115,7 @@ private struct APIKeySectionContent: View {
 
         if let feedback = viewModel.feedback {
             Text(feedback)
-                .font(.callout)
+                .font(.smoory_caption)
                 .foregroundStyle(.secondary)
         }
     }

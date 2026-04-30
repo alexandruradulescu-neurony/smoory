@@ -4,6 +4,7 @@ import Security
 enum KeychainService {
     static let anthropicAPIKeyService = "com.assistant.smoory.anthropic.apikey"
     static let voyageAPIKeyService = "com.assistant.smoory.voyage.apikey"
+    static let deepseekAPIKeyService = "com.assistant.smoory.deepseek.apikey"
 
     static func read(service: String, account: String = "default") -> String? {
         let query: [CFString: Any] = [

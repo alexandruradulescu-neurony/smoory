@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 enum WriteMemoryFactTool: Tool {
     static let name = "write_memory_fact"
@@ -8,8 +9,8 @@ enum WriteMemoryFactTool: Tool {
         preferences. Use this when the user states something the assistant should remember \
         for future conversations, like "I'm vegetarian" or "I work at Acme" or "my partner's \
         name is Maria". Only write high-confidence facts (>= 0.85). For lower-confidence \
-        observations, do not write — the structuring layer (in a later milestone) will \
-        propose them as candidates for user confirmation.
+        observations, do not write — the structuring layer surfaces them as candidates for \
+        user confirmation.
         """
 
     static let confirmationTier: ConfirmationTier = .silent
@@ -78,8 +79,41 @@ enum WriteMemoryFactTool: Tool {
 
         try await context.services.hema.writeFact(fact)
 
+        // Surface silent writes in Feed as auto-applied rows so the user has an audit
+        // trail without an interruption (per MEMORY.md "transparency" requirement).
+        await Self.recordAutoAppliedCandidate(
+            fact: fact,
+            modelContainer: context.services.modelContainer,
+            chatSessionID: context.chatSessionID
+        )
+
         let json = #"{"status":"written","id":"\#(fact.id.uuidString)"}"#
         return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+    }
+
+    @MainActor
+    private static func recordAutoAppliedCandidate(
+        fact: SemanticFact,
+        modelContainer: ModelContainer,
+        chatSessionID: UUID
+    ) {
+        let row = CandidateWrite()
+        row.type = .fact
+        row.content = fact.body
+        row.confidence = fact.confidence
+        row.status = .autoApplied
+        row.sourceSessionID = chatSessionID
+        row.reviewedAt = Date()
+        row.resultEntityID = fact.id
+        row.extractingModel = AIProviderStore.current().modelID(for: .balanced)
+
+        let context = ModelContext(modelContainer)
+        context.insert(row)
+        do {
+            try context.save()
+        } catch {
+            print("[write_memory_fact] failed to record auto-applied candidate: \(error)")
+        }
     }
 
     private static func decodeInput(_ jsonString: String) throws -> Input {

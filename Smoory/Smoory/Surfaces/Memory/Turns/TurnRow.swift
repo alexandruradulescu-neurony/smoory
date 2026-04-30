@@ -10,17 +10,17 @@ struct TurnRow: View {
                     .foregroundStyle(turn.role == .user ? AnyShapeStyle(Color.blue) : AnyShapeStyle(Color.purple))
                     .imageScale(.small)
                 Text(turn.role == .user ? "You" : "Smoory")
-                    .font(.caption)
+                    .font(.smoory_caption)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(FactRow.relativeAge(turn.createdAt))
-                    .font(.caption2)
+                    .font(.smoory_micro)
                     .foregroundStyle(.tertiary)
             }
             Text(turn.content)
-                .font(.callout)
+                .font(.smoory_body)
                 .lineLimit(3)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
     }
 }
