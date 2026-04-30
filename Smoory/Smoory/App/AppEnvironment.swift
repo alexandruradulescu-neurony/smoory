@@ -17,6 +17,10 @@ private struct ChatViewModelKey: EnvironmentKey {
     static let defaultValue: ChatViewModel? = nil
 }
 
+private struct ScheduledActionServiceKey: EnvironmentKey {
+    static let defaultValue: ScheduledActionService? = nil
+}
+
 extension EnvironmentValues {
     var hemaState: HemaState {
         get { self[HemaStateKey.self] }
@@ -30,5 +34,10 @@ extension EnvironmentValues {
     var chatViewModel: ChatViewModel? {
         get { self[ChatViewModelKey.self] }
         set { self[ChatViewModelKey.self] = newValue }
+    }
+    /// App-level ScheduledActionService — Settings reads this to drive the day-review toggle.
+    var scheduledActionService: ScheduledActionService? {
+        get { self[ScheduledActionServiceKey.self] }
+        set { self[ScheduledActionServiceKey.self] = newValue }
     }
 }

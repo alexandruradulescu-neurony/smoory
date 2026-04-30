@@ -13,6 +13,9 @@ enum ToolRegistry {
         DeleteTodoTool.self,
         CreateSubtaskTool.self,
         WriteMemoryFactTool.self,
+        CompleteDayReviewTool.self,
+        PostponeScheduledActionTool.self,
+        SkipScheduledActionTool.self,
     ]
 
     static func tool(named name: String) -> (any Tool.Type)? {

@@ -1,4 +1,6 @@
+import SwiftData
 import SwiftUI
+import UserNotifications
 
 struct SettingsView: View {
     private let surface: Surface = .settings
@@ -21,7 +23,11 @@ struct SettingsView: View {
     @State private var providerVM = ProviderViewModel()
 
     @Environment(\.chatViewModel) private var chatViewModel
+    @Environment(\.scheduledActionService) private var scheduledActionService
+    @Environment(\.modelContext) private var modelContext
     @State private var onboardingFeedback: String?
+    @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
+    @State private var dayReviewVM: DayReviewSettingsViewModel?
 
     @Bindable private var failureCounter = StructuringFailureCounter.shared
 
@@ -68,6 +74,25 @@ struct SettingsView: View {
                 APIKeySectionContent(viewModel: voyageVM)
             }
 
+            if let dayReviewVM {
+                dayReviewSection(viewModel: dayReviewVM)
+            }
+
+            Section("Notifications") {
+                HStack {
+                    Image(systemName: notificationStatus == .authorized ? "bell.fill" : "bell.slash")
+                        .foregroundStyle(notificationStatus == .authorized ? .green : .secondary)
+                    Text(notificationStatusText)
+                        .font(.smoory_body)
+                    Spacer()
+                }
+                if notificationStatus != .authorized {
+                    Text("Enable in System Settings → Notifications → Smoory.")
+                        .font(.smoory_caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
             Section("Onboarding") {
                 HStack {
                     Button("Restart onboarding") {
@@ -104,6 +129,49 @@ struct SettingsView: View {
         .padding()
         .navigationTitle(surface.title)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear {
+            Task { await refreshNotificationStatus() }
+            if dayReviewVM == nil {
+                dayReviewVM = DayReviewSettingsViewModel(
+                    modelContainer: modelContext.container,
+                    service: scheduledActionService
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func dayReviewSection(viewModel: DayReviewSettingsViewModel) -> some View {
+        @Bindable var vm = viewModel
+        Section("Day review") {
+            Toggle("Enable evening day review", isOn: $vm.dayReviewEnabled)
+
+            if vm.dayReviewEnabled {
+                DatePicker(
+                    "Time",
+                    selection: $vm.dayReviewTime,
+                    displayedComponents: [.hourAndMinute]
+                )
+                Text("Smoory will check in at this time each evening to reflect on the day.")
+                    .font(.smoory_caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var notificationStatusText: String {
+        switch notificationStatus {
+        case .authorized, .provisional, .ephemeral: "Notifications: enabled"
+        case .denied:                                "Notifications: disabled"
+        case .notDetermined:                         "Notifications: not determined"
+        @unknown default:                            "Notifications: unknown state"
+        }
+    }
+
+    @MainActor
+    private func refreshNotificationStatus() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        notificationStatus = settings.authorizationStatus
     }
 }
 

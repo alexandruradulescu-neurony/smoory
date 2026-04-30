@@ -367,6 +367,35 @@ User-configured times for rituals. A small set of records, mostly singletons.
 - `notify: Bool` — whether to send a notification or just place in feed
 - `enabled: Bool`
 
+**Schedule vs ScheduledAction.** `Schedule` is the user-facing recurring template ("morning brief at 08:00 weekdays"). `ScheduledAction` is the per-occurrence row that the system creates from a `Schedule` when an instance fires. The two are related but never collapsed — a `Schedule` may produce many `ScheduledAction` rows over its lifetime; conversely a one-off `ScheduledAction` (e.g. a user reminder created from chat) has no `Schedule` parent.
+
+---
+
+## ScheduledAction
+
+Per-occurrence row representing one fire of a scheduled ritual or reminder. Created by `ScheduledActionService` either from a `Schedule` (recurring pattern), from a chat tool (`postpone_scheduled_action` / future `create_scheduled_action`), or from a debug command. The service is the only writer; all other code mutates rows through it.
+
+**Fields:**
+- `kind: ScheduledActionKind` — `.morningBrief, .dayReview, .weekReview, .goalNudge, .userReminder` (Int-backed)
+- `scheduledFor: Date` — current effective fire time (mutated by postpone / reschedule)
+- `originalScheduledFor: Date` — fire time at creation; immutable. Anchors recurring regeneration so deferring one occurrence doesn't drift the recurrence.
+- `status: ScheduledActionStatus` — `.pending, .firing, .completed, .deferred, .cancelled, .skipped` (Int-backed)
+- `createdAt: Date`
+- `createdBySource: ActionSource` — `.system, .userChat` (Int-backed)
+- `completedAt: Date?`
+- `content: String` — body for `.userReminder` / `.goalNudge`; empty for system kinds whose body is generated at fire time
+- `relatedEntityID: UUID?` — optional foreign key (a Goal for goalNudge, a Todo for a reminder about a specific item, etc.) — resolved by the action consumer
+- `recurringRuleJSON: String?` — JSON-encoded `RecurringRule` (kind: daily/weekly/weekdays/none, timeOfDay: DateComponents, dayOfWeek: Int?). Nil = one-off.
+- `deferralCount: Int` — incremented on every postpone / reschedule
+- `deferralHistoryJSON: String` — JSON array of `DeferralEntry { at, fromTime, toTime, reason? }` for pattern observation in 3.6
+- `userResponseTimeSeconds: Double?` — seconds from `scheduledFor` to `completedAt`
+
+**Lifecycle.** Service-only mutations. `pending` → `firing` (when `scheduledFor` passes — handled by the foreground polling timer or notification arrival) → `completed` / `skipped` / `cancelled`. `pending` ↔ `pending` via `postpone` / `reschedule` (status briefly `.deferred` is reserved but currently elided — postpone keeps status pending and only mutates `scheduledFor`). On `markCompleted` and `skipThisOccurrence`, if `recurringRule != nil` the service generates the next occurrence anchored on `originalScheduledFor + interval`. `cancel` kills the entire recurring thread (no regeneration); `skipThisOccurrence` skips just this one.
+
+**Notification mirroring.** Every pending row has a corresponding `UNUserNotificationCenter` request keyed by `id.uuidString`. Postpone cancels and re-adds; cancel/skip removes; markCompleted lets the OS clean up after fire.
+
+**App Group snapshot.** On every mutation, `ScheduledActionService` writes the upcoming pending queue (max 7 rows, sorted ascending by `scheduledFor`) to `~/Library/Group Containers/group.com.assistant.smoory.shared/scheduled-actions.json` for the future widget.
+
 ---
 
 ## RuleAdjustment

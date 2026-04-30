@@ -18,4 +18,19 @@ struct ToolServices: Sendable {
     let calendarService: CalendarService
     let modelContainer: ModelContainer
     let hema: HemaService
+    /// Optional because chat construction precedes ScheduledActionService bring-up in some
+    /// startup orderings; tools that need it must guard before use.
+    let scheduledActionService: ScheduledActionService?
+
+    init(
+        calendarService: CalendarService,
+        modelContainer: ModelContainer,
+        hema: HemaService,
+        scheduledActionService: ScheduledActionService? = nil
+    ) {
+        self.calendarService = calendarService
+        self.modelContainer = modelContainer
+        self.hema = hema
+        self.scheduledActionService = scheduledActionService
+    }
 }

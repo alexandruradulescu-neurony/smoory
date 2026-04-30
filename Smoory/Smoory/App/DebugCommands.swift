@@ -5,6 +5,7 @@ import SwiftUI
 struct DebugCommands: Commands {
     let hemaState: HemaState
     let modelContainer: ModelContainer
+    let scheduledActionService: ScheduledActionService?
 
     var body: some Commands {
         CommandMenu("Debug") {
@@ -150,6 +151,15 @@ struct DebugCommands: Commands {
                 }
                 print("---- END ----")
             }
+
+            Divider()
+
+            Divider()
+
+            ScheduledActionDebugCommands(
+                service: scheduledActionService,
+                modelContainer: modelContainer
+            )
 
             Divider()
 

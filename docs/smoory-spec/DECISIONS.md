@@ -557,4 +557,16 @@ Keep this document up to date as decisions evolve. Future-you (and Claude Code) 
 
 ---
 
+## Phase 3: foreground polling instead of BGTaskScheduler (added 2026-04-30, milestone 3.1)
+
+**Decision:** Phase 3's scheduled-action firing uses a foreground 5-minute `Timer` plus `UNUserNotificationCenter` for the at-time hint, walking back the `BGTaskScheduler` recommendation in DECISIONS.md:244.
+
+**What this means in practice:** When the app is foreground, the timer flips overdue `pending` rows to `firing` every 5 minutes. When the app is closed, `UNUserNotificationCenter` still fires the OS notification at the scheduled time (the OS handles its own timing); the SwiftData status flip happens on next app launch when `processOverdue()` runs. The action consumer in 3.2+ surfaces firing rows to the user; until the user opens the app, only the OS notification has fired.
+
+**Trade-off accepted:** No true background processing. If the user dismisses an OS notification without opening the app, the row stays `.pending` until the app is reopened (the polling-on-launch path catches it). Acceptable for a single-user single-Mac personal assistant where the app is typically running. `BGTaskScheduler` would add real-but-bounded background fire latency, but the implementation overhead (background mode capability, task identifier registration, declarative scheduling) is not worth it before action consumers exist.
+
+**Why now:** Adding `BGTaskScheduler` later is straightforward — `ScheduledActionService.processOverdue()` is the single integration point. Foreground-only first means the 3.1 foundation lands without the macOS background-task machinery that has its own learning curve. Revisit when 3.2+ ships and the gap is felt in real use.
+
+---
+
 End of spec. Time to build.

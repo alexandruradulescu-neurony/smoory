@@ -61,3 +61,15 @@ Availability candidates currently go to the queue like any other candidate. Spec
 Stopgap acceptance behavior (2.4): availability candidates are written as semantic facts with tag `["availability"]` and the user-stated end date as `expiresAt`. There is no `Availability` or `OffPeriod` entity yet — `Schedule` is for repeating brief/review schedules and is the wrong fit. Phase 3 should decide: introduce `OffPeriod`, reuse `Schedule` with a kind extension, or keep facts-as-availability and read them via tag query when proactive proposals run.
 
 ---
+
+## Open gap from milestone 3.2 — Day review opener is static, not LLM-generated
+
+**Decided in milestone 3.2 (2026-04-30).**
+
+The day-review session opens with a randomly-picked line from a small static set ("How did today go?", "What stood out today?", "How are you feeling about today?", "Anything you want to capture from today?"). AI_PROMPTS.md §5 specifies a richer opener: claude-sonnet-4-6 generates an opener seeded with today's completed/slipped/calendar/goal data, surfaces 1–2 specific things, and invites a short reflection.
+
+3.2 ships the static set per the milestone prompt. The LLM-generated opener is deferred until we've observed real day reviews for a week and know whether the static set is good enough or whether the concrete-acknowledgement requirement is load-bearing for engagement.
+
+**When to revisit:** if users (the dev) report the opener feels generic or fails to draw out reflection, schedule a "review opener generator" milestone that wires `claude-sonnet-4-6` (or active provider's heavy tier) into `DayReviewViewModel.startIfNeeded()` with the inputs listed in AI_PROMPTS.md §5. The static-set call site is `DayReviewPrompts.randomOpener()` — single-call replacement.
+
+---

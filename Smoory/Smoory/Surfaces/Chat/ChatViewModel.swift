@@ -48,6 +48,8 @@ You have access to:
 - complete_todo, update_todo, defer_todo, delete_todo to manage existing todos (each surfaces a confirmation card)
 - create_subtask to add a subtask under an existing parent todo
 - write_memory_fact to silently record high-confidence facts the user states (confidence >= 0.85)
+- postpone_scheduled_action to push a Smoory-scheduled prompt (day review, reminder) to a later time when the user says things like "remind me at 9 instead", "push it back two hours"
+- skip_scheduled_action to skip a single occurrence of a recurring schedule when the user says "skip the day review tonight" — recurring future occurrences are unaffected
 
 Use create_todo ONLY when the user explicitly asks for a discrete action item — "add a todo", "remind me to X", "I need to call Y tomorrow". Do NOT infer todos from goals, aspirations, or general statements of intent ("I want to learn Italian" is a goal, not a todo). A separate structuring layer handles goals, projects, people, infrastructure, availability, and tone observations from your conversation; you should not duplicate its work.
 
@@ -87,7 +89,8 @@ When you sense the user has covered the basics, or the user signals they're done
         hema: HemaService,
         chatSessionID: UUID,
         client: LLMClient = RoutingLLMClient(),
-        calendarService: CalendarService? = nil
+        calendarService: CalendarService? = nil,
+        scheduledActionService: ScheduledActionService? = nil
     ) {
         self.modelContainer = modelContainer
         self.hema = hema
@@ -98,7 +101,8 @@ When you sense the user has covered the basics, or the user signals they're done
         let services = ToolServices(
             calendarService: resolvedCalendar,
             modelContainer: modelContainer,
-            hema: hema
+            hema: hema,
+            scheduledActionService: scheduledActionService
         )
         self.services = services
         self.orchestrator = Orchestrator(
