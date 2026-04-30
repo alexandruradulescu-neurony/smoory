@@ -7,10 +7,16 @@ import UserNotifications
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     private weak var service: ScheduledActionService?
     private weak var pendingDayReview: PendingDayReviewState?
+    private weak var firedReminderQueue: FiredReminderQueue?
 
-    func attach(service: ScheduledActionService, pendingDayReview: PendingDayReviewState) {
+    func attach(
+        service: ScheduledActionService,
+        pendingDayReview: PendingDayReviewState,
+        firedReminderQueue: FiredReminderQueue
+    ) {
         self.service = service
         self.pendingDayReview = pendingDayReview
+        self.firedReminderQueue = firedReminderQueue
         UNUserNotificationCenter.current().delegate = self
     }
 
@@ -102,7 +108,15 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
             pending.actionToPresent = row
             print("[notif] presenting day review for \(id)")
 
-        case .morningBrief, .weekReview, .goalNudge, .userReminder:
+        case .userReminder:
+            guard let queue = firedReminderQueue else {
+                print("[notif] userReminder tapped but FiredReminderQueue not attached")
+                return
+            }
+            queue.enqueue(action: row)
+            print("[notif] enqueued reminder banner for \(id)")
+
+        case .morningBrief, .weekReview, .goalNudge:
             print("[notif] kind=\(row.kind) tapped — no consumer wired yet for this kind")
         }
     }

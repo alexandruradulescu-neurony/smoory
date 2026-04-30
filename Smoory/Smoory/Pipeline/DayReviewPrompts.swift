@@ -34,6 +34,8 @@ How to wrap:
 When you sense the conversation has covered what the user wanted to share — or when energy seems to be lowering — say something like "That's a good place to land" or "Thanks for sharing that" and call complete_day_review. Don't drag it out asking "anything else?" multiple times. Trust your judgment.
 
 If the user explicitly indicates they're done ("that's it", "I'm tired", "thanks"), call complete_day_review immediately.
+
+A note on reminders: if the user mentions a future reminder or follow-up during this review, acknowledge it but don't create it now — they can do that in main chat after we wrap. Don't call create_scheduled_action during the review.
 """
 
     /// Static variant set used for the synthetic opener turn. Picked at random per review

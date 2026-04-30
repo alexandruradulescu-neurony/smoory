@@ -22,6 +22,8 @@ struct SmooryApp: App {
     @State private var pollingTimer: Timer?
     @State private var notificationDelegate = NotificationDelegate()
     @State private var pendingDayReview = PendingDayReviewState()
+    @State private var firedReminderQueue = FiredReminderQueue()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // Load the sqlite-vec extension into SQLite globally. Must happen before any Database init.
@@ -61,38 +63,48 @@ struct SmooryApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(\.dynamicTypeSize, .xxLarge)
-                .environment(\.hemaState, hemaState)
-                .environment(\.chatSessionID, chatSessionID)
-                .environment(\.chatViewModel, chatViewModel)
-                .environment(\.scheduledActionService, scheduledActionService)
-                .sheet(isPresented: Binding(
-                    get: { pendingDayReview.actionToPresent != nil },
-                    set: { newValue in
-                        if !newValue { pendingDayReview.actionToPresent = nil }
+            ZStack(alignment: .top) {
+                ContentView()
+                    .environment(\.dynamicTypeSize, .xxLarge)
+                    .environment(\.hemaState, hemaState)
+                    .environment(\.chatSessionID, chatSessionID)
+                    .environment(\.chatViewModel, chatViewModel)
+                    .environment(\.scheduledActionService, scheduledActionService)
+                    .sheet(isPresented: Binding(
+                        get: { pendingDayReview.actionToPresent != nil },
+                        set: { newValue in
+                            if !newValue { pendingDayReview.actionToPresent = nil }
+                        }
+                    )) {
+                        if let action = pendingDayReview.actionToPresent,
+                           case .ready(let hema) = hemaState,
+                           let svc = scheduledActionService {
+                            DayReviewSheet(
+                                viewModel: DayReviewViewModel(
+                                    action: action,
+                                    modelContainer: sharedModelContainer,
+                                    hema: hema,
+                                    scheduledActionService: svc
+                                ),
+                                dismiss: { pendingDayReview.actionToPresent = nil }
+                            )
+                        }
                     }
-                )) {
-                    if let action = pendingDayReview.actionToPresent,
-                       case .ready(let hema) = hemaState,
-                       let svc = scheduledActionService {
-                        DayReviewSheet(
-                            viewModel: DayReviewViewModel(
-                                action: action,
-                                modelContainer: sharedModelContainer,
-                                hema: hema,
-                                scheduledActionService: svc
-                            ),
-                            dismiss: { pendingDayReview.actionToPresent = nil }
-                        )
+                    .task {
+                        initializeScheduledActionsIfNeeded()
+                        await initializeHemaIfNeeded()
+                        await requestNotificationPermissionIfNeeded()
+                        startPollingIfNeeded()
+                        await refreshStaleReminders()
                     }
-                }
-                .task {
-                    initializeScheduledActionsIfNeeded()
-                    await initializeHemaIfNeeded()
-                    await requestNotificationPermissionIfNeeded()
-                    startPollingIfNeeded()
-                }
+                    .onChange(of: scenePhase) { _, newPhase in
+                        if newPhase == .active {
+                            Task { @MainActor in await refreshStaleReminders() }
+                        }
+                    }
+
+                reminderBannerStack
+            }
         }
         .modelContainer(sharedModelContainer)
         .defaultSize(width: 1100, height: 700)
@@ -136,7 +148,11 @@ struct SmooryApp: App {
             appGroupWriter: writer
         )
         scheduledActionService = service
-        notificationDelegate.attach(service: service, pendingDayReview: pendingDayReview)
+        notificationDelegate.attach(
+            service: service,
+            pendingDayReview: pendingDayReview,
+            firedReminderQueue: firedReminderQueue
+        )
         if writer == nil {
             print("[scheduled] App Group container unavailable — widget snapshot writes are disabled")
         } else {
@@ -158,6 +174,46 @@ struct SmooryApp: App {
         } catch {
             print("[notif] permission request failed: \(error)")
         }
+    }
+
+    @ViewBuilder
+    private var reminderBannerStack: some View {
+        VStack(spacing: 8) {
+            ForEach(firedReminderQueue.visibleReminders) { reminder in
+                ReminderBannerView(
+                    reminder: reminder,
+                    onMarkDone: { Task { @MainActor in await markReminderDone(reminder) } },
+                    onPostpone1h: { Task { @MainActor in await postponeReminder(reminder, by: 3600) } },
+                    onSnooze10m: { Task { @MainActor in await postponeReminder(reminder, by: 600) } }
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .padding(.top, 8)
+        .padding(.horizontal, 12)
+        .animation(.easeOut(duration: 0.25), value: firedReminderQueue.visibleReminders.map(\.id))
+        .allowsHitTesting(!firedReminderQueue.visibleReminders.isEmpty)
+    }
+
+    @MainActor
+    private func markReminderDone(_ reminder: FiredReminderQueue.FiredReminder) async {
+        guard let svc = scheduledActionService else { return }
+        let elapsed = Date().timeIntervalSince(reminder.firedAt)
+        _ = try? await svc.markCompleted(actionID: reminder.id, userResponseTime: elapsed)
+        firedReminderQueue.dismiss(id: reminder.id)
+    }
+
+    @MainActor
+    private func postponeReminder(_ reminder: FiredReminderQueue.FiredReminder, by interval: TimeInterval) async {
+        guard let svc = scheduledActionService else { return }
+        _ = try? await svc.postpone(actionID: reminder.id, by: interval, reason: "user-banner-postpone")
+        firedReminderQueue.dismiss(id: reminder.id)
+    }
+
+    @MainActor
+    private func refreshStaleReminders() async {
+        guard let svc = scheduledActionService else { return }
+        await firedReminderQueue.enqueueAllStaleUserReminders(service: svc)
     }
 
     @MainActor
