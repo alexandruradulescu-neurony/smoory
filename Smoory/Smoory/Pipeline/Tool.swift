@@ -9,13 +9,21 @@ protocol Tool: Sendable {
     static var inputSchema: ToolInputSchema { get }
     static var confirmationTier: ConfirmationTier { get }
 
+    /// True if the confirmation card's Edit button should be shown.
+    /// Tools with no editable fields (complete_todo, delete_todo) override to false.
+    static var supportsEditing: Bool { get }
+
     static func execute(
         parametersJSON: String,
         context: ToolExecutionContext
     ) async throws -> ToolOutput
 
     /// Compact human-readable summary for confirmation cards. Default: nil (silent tools don't need this).
-    static func renderSummary(parametersJSON: String) -> ProposedActionSummary?
+    /// Receives the model container so summaries can look up entity titles by id.
+    static func renderSummary(
+        parametersJSON: String,
+        modelContainer: ModelContainer
+    ) -> ProposedActionSummary?
 
     /// Edit form shown when the user taps Edit on a card. Default: empty (silent tools don't need this).
     @MainActor
@@ -28,7 +36,9 @@ protocol Tool: Sendable {
 }
 
 extension Tool {
-    static func renderSummary(parametersJSON: String) -> ProposedActionSummary? { nil }
+    static var supportsEditing: Bool { true }
+
+    static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? { nil }
 
     @MainActor
     static func makeEditView(

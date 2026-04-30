@@ -551,6 +551,10 @@ Keep this document up to date as decisions evolve. Future-you (and Claude Code) 
 
 **Subtask deletion cascades from parent (added 2026-04-30):** Deleting a parent Todo deletes all its subtasks via `@Relationship(deleteRule: .cascade)`. Reason: subtasks have no meaning detached from their parent; the alternative (orphaned subtasks promoted to top-level) silently surfaces stale work and breaks the user's mental model of the parent-as-unit. Implemented in milestone 2.2.5a alongside the schema migration.
 
+**Soft-delete via isArchived (added 2026-04-30, milestone 2.2.5b):** `delete_todo` is a soft delete: it sets `isArchived = true` + `archivedAt`. The Todo stays in the SwiftData store but is filtered out of the surface and out of `get_open_todos`. Why: keeps a recovery affordance latent (a future "trash" or undo could surface archived todos) and keeps the entity's history for week-review pattern observation. Hard delete is reserved for explicit user "purge" flows that don't exist yet. Archive cascades to subtasks for the same parent-as-unit reason as the cascade-delete rule.
+
+**Defer reasons appended to notes (added 2026-04-30, milestone 2.2.5b):** `defer_todo`'s optional `reason` is appended to the Todo's `notes` field as a single line `[Deferred YYYY-MMM-DD: <reason>]` rather than stored on a separate `DeferralRecord` entity. Why: pattern observation in week-reviews can grep these without joining a side table; the v1 cost of a separate entity exceeds its benefit until pattern observation actually consumes it. Revisit if defer-pattern queries become real.
+
 ---
 
 End of spec. Time to build.

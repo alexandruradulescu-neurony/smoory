@@ -20,6 +20,8 @@ final class Todo {
     var parentTodo: Todo?
     @Relationship(deleteRule: .cascade, inverse: \Todo.parentTodo)
     var subtasks: [Todo] = []
+    var isArchived: Bool = false
+    var archivedAt: Date?
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 

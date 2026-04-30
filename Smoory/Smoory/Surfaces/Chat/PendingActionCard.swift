@@ -46,8 +46,10 @@ struct PendingActionCard: View {
             HStack(spacing: 8) {
                 Button(action.wasEdited ? "Confirm (edited)" : "Confirm", action: onConfirm)
                     .buttonStyle(.borderedProminent)
-                Button("Edit", action: onEdit)
-                    .buttonStyle(.bordered)
+                if supportsEditing {
+                    Button("Edit", action: onEdit)
+                        .buttonStyle(.bordered)
+                }
                 Spacer()
                 Button("Decline", role: .destructive, action: onDecline)
                     .buttonStyle(.borderless)
@@ -109,6 +111,10 @@ struct PendingActionCard: View {
 
     private var currentSummary: ProposedActionSummary? {
         guard let toolType = ToolRegistry.tool(named: action.toolName) else { return nil }
-        return toolType.renderSummary(parametersJSON: action.effectiveParametersJSON)
+        return toolType.renderSummary(parametersJSON: action.effectiveParametersJSON, modelContainer: modelContainer)
+    }
+
+    private var supportsEditing: Bool {
+        ToolRegistry.tool(named: action.toolName)?.supportsEditing ?? true
     }
 }

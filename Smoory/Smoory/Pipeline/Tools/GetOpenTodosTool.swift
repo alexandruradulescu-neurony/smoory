@@ -48,12 +48,14 @@ enum GetOpenTodosTool: Tool {
     }
 
     private struct TodoPayload: Encodable {
+        let id: String
         let title: String
         let notes: String
         let dueDate: String?
         let priority: String
         let role: String?
         let project: String?
+        let subtasks: [TodoPayload]
     }
 
     static func execute(
@@ -67,8 +69,8 @@ enum GetOpenTodosTool: Tool {
         descriptor.fetchLimit = 500
         let allTodos = (try? modelContext.fetch(descriptor)) ?? []
 
-        // Top-level only: subtasks must not leak into chat replies as flat items.
-        var filtered = allTodos.filter { !$0.isCompleted && $0.parentTodo == nil }
+        // Top-level only: subtasks ride along nested under their parent payloads, never flat.
+        var filtered = allTodos.filter { !$0.isCompleted && !$0.isArchived && $0.parentTodo == nil }
 
         if let roleSlug = input.role {
             filtered = filtered.filter { $0.role?.slug == roleSlug }
@@ -90,19 +92,30 @@ enum GetOpenTodosTool: Tool {
         let limit = input.limit ?? 20
         let limited = Array(filtered.prefix(limit))
 
-        let payload = limited.map { todo in
-            TodoPayload(
-                title: todo.title,
-                notes: todo.notes,
-                dueDate: todo.dueDate?.formatted(.iso8601),
-                priority: Self.priorityName(todo.priority),
-                role: todo.role?.slug,
-                project: todo.parentProject?.title
-            )
-        }
+        let payload = limited.map { Self.makePayload(todo: $0, includeSubtasks: true) }
 
         let json = try Self.encodeJSON(payload)
         return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+    }
+
+    /// Recursive payload builder. `includeSubtasks` is true for top-level rows so children ride along.
+    /// For subtasks themselves we never recurse further (one-level rule, enforced at insertion time).
+    private static func makePayload(todo: Todo, includeSubtasks: Bool) -> TodoPayload {
+        let kids = includeSubtasks
+            ? todo.subtasks
+                .filter { !$0.isArchived }
+                .map { Self.makePayload(todo: $0, includeSubtasks: false) }
+            : []
+        return TodoPayload(
+            id: todo.id.uuidString,
+            title: todo.title,
+            notes: todo.notes,
+            dueDate: todo.dueDate?.formatted(.iso8601),
+            priority: Self.priorityName(todo.priority),
+            role: todo.role?.slug,
+            project: todo.parentProject?.title,
+            subtasks: kids
+        )
     }
 
     private static func decodeInput(_ jsonString: String) throws -> Input {

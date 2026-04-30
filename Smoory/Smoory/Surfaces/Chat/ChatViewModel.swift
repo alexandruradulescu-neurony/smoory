@@ -39,9 +39,14 @@ You have access to:
 - The user's open todos via get_open_todos
 - The user's memory of past conversations and learned facts via retrieve_memory
 - create_todo to propose adding a new todo (the user sees a confirmation card)
+- complete_todo, update_todo, defer_todo, delete_todo to manage existing todos (each surfaces a confirmation card)
+- create_subtask to add a subtask under an existing parent todo
 - write_memory_fact to silently record high-confidence facts the user states (confidence >= 0.85)
 
 Use create_todo when the user explicitly asks for a todo or you're capturing an action item.
+
+When the user references a todo by description ("the dentist one", "my high-priority Apollo todo"), call get_open_todos first to find the matching id, then call the action tool with that todo_id. Don't ask the user for the UUID. Subtasks are nested inside their parent in the get_open_todos response — use them when the user references a subtask.
+
 Use write_memory_fact only for high-confidence durable facts the user has stated about themselves, their world, or their preferences. Do not write low-confidence observations or temporary information.
 
 The compact summaries below are always-on. For specific past facts, names, or events, use retrieve_memory with a focused query.
@@ -206,7 +211,8 @@ Be conversational, concise, and honest about what you don't know. If memory retr
         do {
             let output = try await toolType.execute(parametersJSON: parameters, context: context)
             let summary = Self.confirmedSummary(toolName: action.toolName,
-                                                  parametersJSON: parameters)
+                                                  parametersJSON: parameters,
+                                                  modelContainer: modelContainer)
             action.state = .confirmed(summary: summary)
             pendingActions[toolUseId] = action
             resolveContinuation(toolUseId: toolUseId, output: output)
@@ -225,10 +231,10 @@ Be conversational, concise, and honest about what you don't know. If memory retr
     func declineAction(toolUseId: String) {
         guard var action = pendingActions[toolUseId] else { return }
         let primary = ToolRegistry.tool(named: action.toolName)?
-            .renderSummary(parametersJSON: action.effectiveParametersJSON)?
+            .renderSummary(parametersJSON: action.effectiveParametersJSON, modelContainer: modelContainer)?
             .primary
         let title = ToolRegistry.tool(named: action.toolName)?
-            .renderSummary(parametersJSON: action.effectiveParametersJSON)?
+            .renderSummary(parametersJSON: action.effectiveParametersJSON, modelContainer: modelContainer)?
             .title ?? action.toolName
         let summary = primary.map { "\(title) (\($0))" } ?? title
         action.state = .declined(summary: summary)
@@ -287,11 +293,16 @@ Be conversational, concise, and honest about what you don't know. If memory retr
         }
     }
 
-    private static func confirmedSummary(toolName: String, parametersJSON: String) -> String {
-        let summary = ToolRegistry.tool(named: toolName)?.renderSummary(parametersJSON: parametersJSON)
+    private static func confirmedSummary(toolName: String, parametersJSON: String, modelContainer: ModelContainer) -> String {
+        let summary = ToolRegistry.tool(named: toolName)?.renderSummary(parametersJSON: parametersJSON, modelContainer: modelContainer)
         let verb: String
         switch toolName {
         case "create_todo": verb = "Created todo"
+        case "complete_todo": verb = "Completed"
+        case "update_todo": verb = "Updated"
+        case "defer_todo": verb = "Deferred"
+        case "delete_todo": verb = "Archived"
+        case "create_subtask": verb = "Added subtask"
         default: verb = "Done"
         }
         return summary.map { "\(verb): \($0.primary)" } ?? verb

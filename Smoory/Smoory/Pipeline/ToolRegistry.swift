@@ -7,6 +7,11 @@ enum ToolRegistry {
         GetOpenTodosTool.self,
         RetrieveMemoryTool.self,
         CreateTodoTool.self,
+        CompleteTodoTool.self,
+        UpdateTodoTool.self,
+        DeferTodoTool.self,
+        DeleteTodoTool.self,
+        CreateSubtaskTool.self,
         WriteMemoryFactTool.self,
     ]
 

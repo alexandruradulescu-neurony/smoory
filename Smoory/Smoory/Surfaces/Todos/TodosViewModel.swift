@@ -10,7 +10,7 @@ final class TodosViewModel {
     /// Subtasks are NOT included in the flat list — they appear under their
     /// parent on expansion.
     func groupedTodos(from allTodos: [Todo]) -> [(DueDateGroup, [Todo])] {
-        let topLevel = allTodos.filter { $0.parentTodo == nil && !$0.isCompleted }
+        let topLevel = allTodos.filter { $0.parentTodo == nil && !$0.isCompleted && !$0.isArchived }
 
         let filtered: [Todo]
         if searchText.isEmpty {

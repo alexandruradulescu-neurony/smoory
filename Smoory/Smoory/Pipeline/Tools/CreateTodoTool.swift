@@ -94,7 +94,7 @@ enum CreateTodoTool: Tool {
         return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
     }
 
-    static func renderSummary(parametersJSON: String) -> ProposedActionSummary? {
+    static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {
         guard let input = try? Self.decodeInput(parametersJSON) else { return nil }
         return ProposedActionSummary(
             icon: "checklist",
