@@ -327,6 +327,8 @@ Smoory's surfaced output. Every annotation, suggestion, alert, brief, or review 
 - `provenance: FeedItemProvenance?` — info about which loop produced this item, for debugging. Optional in v1 because no FeedItem producers exist yet that can guarantee provenance; Phase 3 producers will populate it.
 - `payloadJSON: String?` — kind-specific structured payload (added milestone 3.4). For `.morningBrief`, carries the full `MorningBrief` JSON used by the Feed surface and the widget's structured rendering. Optional, default nil — older kinds leave it nil; readers always handle the nil case.
 
+**Widget contract (added milestone 3.5):** The desktop widget extension cannot import main-app types and reads the App Group container files (`morning-brief.json`, `scheduled-actions.json`) directly. The JSON shapes of `MorningBrief` (this file) and `ScheduledActionsSnapshot` (in `Services/AppGroupContainerWriter.swift`) are therefore wire contracts — field renames are breaking changes for the widget. The widget mirrors these types as `WidgetMorningBrief` / `WidgetScheduledAction` in `SmooryWidget/WidgetTypes.swift` with exact field-name match. Adding fields is non-breaking (widget ignores unknown). Removing fields breaks widget decode unless they are made optional first in a release-prior milestone.
+
 **Sub-types:**
 
 ```

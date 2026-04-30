@@ -7,14 +7,52 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FA2FCC2D2FA3E7D6001627FE /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA2FCC2C2FA3E7D6001627FE /* WidgetKit.framework */; };
+		FA2FCC2F2FA3E7D6001627FE /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA2FCC2E2FA3E7D6001627FE /* SwiftUI.framework */; };
+		FA2FCC3A2FA3E7D8001627FE /* SmooryWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FA2FCC2A2FA3E7D6001627FE /* SmooryWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FAB52F392FA26D3200541477 /* SQLiteVec in Frameworks */ = {isa = PBXBuildFile; productRef = FAB52F382FA26D3200541477 /* SQLiteVec */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		FA2FCC382FA3E7D8001627FE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = FA7F32322FA2380400F94AAE /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FA2FCC292FA3E7D6001627FE;
+			remoteInfo = SmooryWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		FA2FCC3B2FA3E7D8001627FE /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				FA2FCC3A2FA3E7D8001627FE /* SmooryWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		FA2FCC2A2FA3E7D6001627FE /* SmooryWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SmooryWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		FA2FCC2C2FA3E7D6001627FE /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		FA2FCC2E2FA3E7D6001627FE /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		FA2FCC402FA3E851001627FE /* SmooryWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SmooryWidgetExtension.entitlements; sourceTree = "<group>"; };
 		FA7F323A2FA2380400F94AAE /* Smoory.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Smoory.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FA2FCC3F2FA3E7D8001627FE /* Exceptions for "SmooryWidget" folder in "SmooryWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = FA2FCC292FA3E7D6001627FE /* SmooryWidgetExtension */;
+		};
 		FA7F324C2FA23CC100F94AAE /* Exceptions for "Smoory" folder in "Smoory" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -25,6 +63,14 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		FA2FCC302FA3E7D6001627FE /* SmooryWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FA2FCC3F2FA3E7D8001627FE /* Exceptions for "SmooryWidget" folder in "SmooryWidgetExtension" target */,
+			);
+			path = SmooryWidget;
+			sourceTree = "<group>";
+		};
 		FA7F323C2FA2380400F94AAE /* Smoory */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -36,6 +82,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		FA2FCC272FA3E7D6001627FE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FA2FCC2F2FA3E7D6001627FE /* SwiftUI.framework in Frameworks */,
+				FA2FCC2D2FA3E7D6001627FE /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		FA7F32372FA2380400F94AAE /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -47,10 +102,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		FA2FCC2B2FA3E7D6001627FE /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				FA2FCC2C2FA3E7D6001627FE /* WidgetKit.framework */,
+				FA2FCC2E2FA3E7D6001627FE /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		FA7F32312FA2380400F94AAE = {
 			isa = PBXGroup;
 			children = (
+				FA2FCC402FA3E851001627FE /* SmooryWidgetExtension.entitlements */,
 				FA7F323C2FA2380400F94AAE /* Smoory */,
+				FA2FCC302FA3E7D6001627FE /* SmooryWidget */,
+				FA2FCC2B2FA3E7D6001627FE /* Frameworks */,
 				FA7F323B2FA2380400F94AAE /* Products */,
 			);
 			sourceTree = "<group>";
@@ -59,6 +126,7 @@
 			isa = PBXGroup;
 			children = (
 				FA7F323A2FA2380400F94AAE /* Smoory.app */,
+				FA2FCC2A2FA3E7D6001627FE /* SmooryWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -66,6 +134,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		FA2FCC292FA3E7D6001627FE /* SmooryWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FA2FCC3E2FA3E7D8001627FE /* Build configuration list for PBXNativeTarget "SmooryWidgetExtension" */;
+			buildPhases = (
+				FA2FCC262FA3E7D6001627FE /* Sources */,
+				FA2FCC272FA3E7D6001627FE /* Frameworks */,
+				FA2FCC282FA3E7D6001627FE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				FA2FCC302FA3E7D6001627FE /* SmooryWidget */,
+			);
+			name = SmooryWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = SmooryWidgetExtension;
+			productReference = FA2FCC2A2FA3E7D6001627FE /* SmooryWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		FA7F32392FA2380400F94AAE /* Smoory */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FA7F32472FA2380600F94AAE /* Build configuration list for PBXNativeTarget "Smoory" */;
@@ -73,10 +163,12 @@
 				FA7F32362FA2380400F94AAE /* Sources */,
 				FA7F32372FA2380400F94AAE /* Frameworks */,
 				FA7F32382FA2380400F94AAE /* Resources */,
+				FA2FCC3B2FA3E7D8001627FE /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				FA2FCC392FA3E7D8001627FE /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				FA7F323C2FA2380400F94AAE /* Smoory */,
@@ -99,6 +191,9 @@
 				LastSwiftUpdateCheck = 2640;
 				LastUpgradeCheck = 2640;
 				TargetAttributes = {
+					FA2FCC292FA3E7D6001627FE = {
+						CreatedOnToolsVersion = 26.4.1;
+					};
 					FA7F32392FA2380400F94AAE = {
 						CreatedOnToolsVersion = 26.4.1;
 					};
@@ -122,11 +217,19 @@
 			projectRoot = "";
 			targets = (
 				FA7F32392FA2380400F94AAE /* Smoory */,
+				FA2FCC292FA3E7D6001627FE /* SmooryWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		FA2FCC282FA3E7D6001627FE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		FA7F32382FA2380400F94AAE /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -137,6 +240,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		FA2FCC262FA3E7D6001627FE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		FA7F32362FA2380400F94AAE /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -146,7 +256,83 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		FA2FCC392FA3E7D8001627FE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FA2FCC292FA3E7D6001627FE /* SmooryWidgetExtension */;
+			targetProxy = FA2FCC382FA3E7D8001627FE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		FA2FCC3C2FA3E7D8001627FE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = SmooryWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 278YW247TS;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SmooryWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SmooryWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.assistant.Smoory.SmooryWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		FA2FCC3D2FA3E7D8001627FE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = SmooryWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 278YW247TS;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SmooryWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SmooryWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.assistant.Smoory.SmooryWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		FA7F32452FA2380600F94AAE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -362,6 +548,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		FA2FCC3E2FA3E7D8001627FE /* Build configuration list for PBXNativeTarget "SmooryWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FA2FCC3C2FA3E7D8001627FE /* Debug */,
+				FA2FCC3D2FA3E7D8001627FE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		FA7F32352FA2380400F94AAE /* Build configuration list for PBXProject "Smoory" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

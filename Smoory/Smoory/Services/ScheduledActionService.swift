@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import UserNotifications
+import WidgetKit
 
 enum ScheduledActionError: Error {
     case notFound
@@ -313,6 +314,11 @@ final class ScheduledActionService {
         )
         let rows = (try? context.fetch(descriptor)) ?? []
         writer.writeScheduledActionsSnapshot(rows)
+        // Single integration point — every mutating method routes through
+        // writeSnapshot, so the widget refresh hint reaches all 8 call sites
+        // (schedule / postpone / reschedule / cancel / skipThisOccurrence /
+        // markCompleted / cancelAll / processOverdue's snapshot rewrite).
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     // MARK: - Notification scheduling

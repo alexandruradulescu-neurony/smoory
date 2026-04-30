@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import UserNotifications
+import WidgetKit
 
 enum MorningBriefError: Error, CustomStringConvertible {
     case generationFailed
@@ -137,6 +138,10 @@ final class MorningBriefGenerator {
         try context.save()
 
         Task { await fireHeadlineNotification(headline: brief.headline) }
+
+        // Hint to WidgetKit so the desktop widget refreshes promptly rather than
+        // waiting for its 15-minute timeline tick.
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     private func markPreviousBriefsActedUpon(in context: ModelContext, except keepID: UUID) {
