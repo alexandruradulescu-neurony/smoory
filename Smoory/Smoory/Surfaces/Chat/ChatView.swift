@@ -2,23 +2,29 @@ import SwiftData
 import SwiftUI
 
 struct ChatView: View {
-    @Environment(\.modelContext) private var modelContext
     @Environment(\.hemaState) private var hemaState
-    @Environment(\.chatSessionID) private var chatSessionID
+    @Environment(\.chatViewModel) private var chatViewModel
 
     var body: some View {
         Group {
             switch hemaState {
             case .loading:
                 loadingView
-            case .ready(let hema):
-                ChatViewContent(
-                    modelContainer: modelContext.container,
-                    hema: hema,
-                    chatSessionID: chatSessionID
-                )
+            case .ready:
+                if let chatViewModel {
+                    ChatViewContent(viewModel: chatViewModel)
+                } else {
+                    loadingView
+                }
             case .failed(let message):
-                failedView(message: message)
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.tertiary)
+                    Text("Memory failed to initialize").font(.title3)
+                    Text(message).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                .padding()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -28,39 +34,14 @@ struct ChatView: View {
     private var loadingView: some View {
         VStack(spacing: 12) {
             ProgressView()
-            Text("Loading memory…")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            Text("Loading memory…").font(.callout).foregroundStyle(.secondary)
         }
-    }
-
-    private func failedView(message: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 40))
-                .foregroundStyle(.tertiary)
-            Text("Memory failed to initialize")
-                .font(.title3)
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
     }
 }
 
 private struct ChatViewContent: View {
-    @State private var viewModel: ChatViewModel
+    @Bindable var viewModel: ChatViewModel
     @FocusState private var isInputFocused: Bool
-
-    init(modelContainer: ModelContainer, hema: HemaService, chatSessionID: UUID) {
-        _viewModel = State(wrappedValue: ChatViewModel(
-            modelContainer: modelContainer,
-            hema: hema,
-            chatSessionID: chatSessionID
-        ))
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -76,12 +57,20 @@ private struct ChatViewContent: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(viewModel.turns) { turn in
-                        TurnBubble(turn: turn)
-                            .id(turn.id)
+                        TurnBubble(
+                            turn: turn,
+                            cards: cards(for: turn),
+                            modelContainer: viewModel.modelContainer,
+                            onConfirm: { id in Task { await viewModel.confirmAction(toolUseId: id) } },
+                            onEdit:    { viewModel.enterEditMode(toolUseId: $0) },
+                            onDecline: { viewModel.declineAction(toolUseId: $0) },
+                            onCommitEdit: { id, json in viewModel.commitEdit(toolUseId: id, newParametersJSON: json) },
+                            onCancelEdit: { viewModel.cancelEdit(toolUseId: $0) }
+                        )
+                        .id(turn.id)
                     }
                     if viewModel.state == .sending {
-                        SendingBubble()
-                            .id(Self.sendingAnchor)
+                        SendingBubble().id(Self.sendingAnchor)
                     }
                 }
                 .padding()
@@ -99,6 +88,12 @@ private struct ChatViewContent: View {
         }
     }
 
+    private func cards(for turn: ChatViewModel.Turn) -> [PendingAction] {
+        viewModel.pendingActions.values
+            .filter { $0.assistantTurnID == turn.id }
+            .sorted { $0.proposedAt < $1.proposedAt }
+    }
+
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField("Message Smoory", text: $viewModel.draft, axis: .vertical)
@@ -111,12 +106,10 @@ private struct ChatViewContent: View {
                     submit()
                     return .handled
                 }
-
             Button {
                 submit()
             } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
+                Image(systemName: "arrow.up.circle.fill").font(.title2)
             }
             .buttonStyle(.borderless)
             .disabled(isSendDisabled)
@@ -139,58 +132,88 @@ private struct ChatViewContent: View {
 
 private struct TurnBubble: View {
     let turn: ChatViewModel.Turn
+    let cards: [PendingAction]
+    let modelContainer: ModelContainer
+    let onConfirm: (String) -> Void
+    let onEdit: (String) -> Void
+    let onDecline: (String) -> Void
+    let onCommitEdit: (String, String) -> Void
+    let onCancelEdit: (String) -> Void
 
     var body: some View {
-        if turn.speaker == .assistant, let names = turn.usedToolNames, !names.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                bubbleRow
+        if turn.speaker == .assistant {
+            assistantBubble
+        } else {
+            simpleBubble
+        }
+    }
+
+    private var assistantBubble: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !turn.text.isEmpty {
+                bubbleRow {
+                    Text(turn.text)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.secondary.opacity(0.15))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .textSelection(.enabled)
+                }
+            }
+            ForEach(cards) { action in
+                bubbleRow {
+                    PendingActionCard(
+                        action: action,
+                        modelContainer: modelContainer,
+                        onConfirm: { onConfirm(action.id) },
+                        onEdit: { onEdit(action.id) },
+                        onDecline: { onDecline(action.id) },
+                        onCommitEdit: { json in onCommitEdit(action.id, json) },
+                        onCancelEdit: { onCancelEdit(action.id) }
+                    )
+                }
+            }
+            if let names = turn.usedToolNames, !names.isEmpty {
                 Text("Used: \(names.joined(separator: ", "))")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 12)
             }
-        } else {
-            bubbleRow
         }
     }
 
-    private var bubbleRow: some View {
-        HStack(alignment: .top) {
-            if turn.speaker == .user { Spacer(minLength: 40) }
-            content
-            if turn.speaker != .user { Spacer(minLength: 40) }
+    private var simpleBubble: some View {
+        bubbleRow {
+            switch turn.speaker {
+            case .user:
+                Text(turn.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.accentColor)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .textSelection(.enabled)
+            case .errorBubble:
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                    Text(turn.text).textSelection(.enabled)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.red.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            case .assistant:
+                EmptyView()
+            }
         }
     }
 
     @ViewBuilder
-    private var content: some View {
-        switch turn.speaker {
-        case .user:
-            Text(turn.text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.accentColor)
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .textSelection(.enabled)
-        case .assistant:
-            Text(turn.text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.secondary.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .textSelection(.enabled)
-        case .errorBubble:
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                Text(turn.text)
-                    .textSelection(.enabled)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.red.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    private func bubbleRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .top) {
+            if turn.speaker == .user { Spacer(minLength: 40) }
+            content()
+            if turn.speaker != .user { Spacer(minLength: 40) }
         }
     }
 }

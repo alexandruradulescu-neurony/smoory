@@ -1,8 +1,8 @@
 import Foundation
+import SwiftData
+import SwiftUI
 
 /// A capability the LLM can invoke. Static-only protocol — tools are stateless types.
-/// Conforming types are usually empty enums (`enum GetCalendarWindowTool: Tool {}`)
-/// rather than instances.
 protocol Tool: Sendable {
     static var name: String { get }
     static var description: String { get }
@@ -13,10 +13,34 @@ protocol Tool: Sendable {
         parametersJSON: String,
         context: ToolExecutionContext
     ) async throws -> ToolOutput
+
+    /// Compact human-readable summary for confirmation cards. Default: nil (silent tools don't need this).
+    static func renderSummary(parametersJSON: String) -> ProposedActionSummary?
+
+    /// Edit form shown when the user taps Edit on a card. Default: empty (silent tools don't need this).
+    @MainActor
+    static func makeEditView(
+        parametersJSON: String,
+        modelContainer: ModelContainer,
+        onCommit: @escaping (String) -> Void,
+        onCancel: @escaping () -> Void
+    ) -> AnyView
 }
 
-/// JSON Schema subset that Anthropic's tool definition accepts.
-/// Encoded directly as the `input_schema` field in the request.
+extension Tool {
+    static func renderSummary(parametersJSON: String) -> ProposedActionSummary? { nil }
+
+    @MainActor
+    static func makeEditView(
+        parametersJSON: String,
+        modelContainer: ModelContainer,
+        onCommit: @escaping (String) -> Void,
+        onCancel: @escaping () -> Void
+    ) -> AnyView {
+        AnyView(EmptyView())
+    }
+}
+
 struct ToolInputSchema: Codable, Sendable, Hashable {
     let type: String                                        // always "object"
     let properties: [String: ToolInputSchemaProperty]
@@ -34,7 +58,7 @@ struct ToolInputSchema: Codable, Sendable, Hashable {
 }
 
 struct ToolInputSchemaProperty: Codable, Sendable, Hashable {
-    let type: String           // "string" | "integer" | "boolean" | "array" | etc.
+    let type: String
     let description: String?
     let items: ToolInputSchemaItem?
 
@@ -46,13 +70,11 @@ struct ToolInputSchemaProperty: Codable, Sendable, Hashable {
 }
 
 struct ToolInputSchemaItem: Codable, Sendable, Hashable {
-    let type: String           // element type for arrays
+    let type: String
 }
 
-/// What a tool produces at runtime. Distinct from `ToolResult` in `Models/Types/ChatTypes.swift`,
-/// which is the placeholder type for ChatMessage persistence (Phase 1).
 struct ToolOutput: Sendable, Hashable, Codable {
     let toolUseId: String
-    let content: String        // JSON or plain text fed back to Claude as tool_result content
+    let content: String
     let isError: Bool
 }

@@ -14,6 +14,8 @@ struct SmooryApp: App {
     @State private var hemaState: HemaState = .loading
     /// Stable for the app's lifetime so navigating sidebar away and back doesn't reset the chat session.
     @State private var chatSessionID = UUID()
+    /// App-level ChatViewModel — outlives sidebar navigation so visible chat history persists.
+    @State private var chatViewModel: ChatViewModel?
 
     init() {
         // Load the sqlite-vec extension into SQLite globally. Must happen before any Database init.
@@ -56,6 +58,7 @@ struct SmooryApp: App {
                 .environment(\.dynamicTypeSize, .xLarge)
                 .environment(\.hemaState, hemaState)
                 .environment(\.chatSessionID, chatSessionID)
+                .environment(\.chatViewModel, chatViewModel)
                 .task { await initializeHemaIfNeeded() }
         }
         .modelContainer(sharedModelContainer)
@@ -71,6 +74,13 @@ struct SmooryApp: App {
         do {
             let hema = try await HemaService(embedder: VoyageEmbedder())
             hemaState = .ready(hema)
+            // Construct ChatViewModel once hema is ready; it lives at App level so chat
+            // history persists across sidebar navigation.
+            chatViewModel = ChatViewModel(
+                modelContainer: sharedModelContainer,
+                hema: hema,
+                chatSessionID: chatSessionID
+            )
             print("[smoory] hema ready at \(hema.databaseURL.path(percentEncoded: false))")
         } catch {
             hemaState = .failed(error.localizedDescription)

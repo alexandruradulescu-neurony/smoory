@@ -13,6 +13,10 @@ private struct ChatSessionIDKey: EnvironmentKey {
     static let defaultValue: UUID = UUID()
 }
 
+private struct ChatViewModelKey: EnvironmentKey {
+    static let defaultValue: ChatViewModel? = nil
+}
+
 extension EnvironmentValues {
     var hemaState: HemaState {
         get { self[HemaStateKey.self] }
@@ -21,5 +25,10 @@ extension EnvironmentValues {
     var chatSessionID: UUID {
         get { self[ChatSessionIDKey.self] }
         set { self[ChatSessionIDKey.self] = newValue }
+    }
+    /// App-level ChatViewModel — persists across sidebar navigation so chat history survives.
+    var chatViewModel: ChatViewModel? {
+        get { self[ChatViewModelKey.self] }
+        set { self[ChatViewModelKey.self] = newValue }
     }
 }

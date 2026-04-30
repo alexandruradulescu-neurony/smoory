@@ -9,6 +9,9 @@ final class Orchestrator {
     private let chatSessionID: UUID
     private let maxToolCallRounds: Int
 
+    /// Set by ChatViewModel post-init to break the retain cycle. Awaited for non-silent tools.
+    weak var delegate: OrchestratorDelegate?
+
     init(
         client: LLMClient,
         registry: [any Tool.Type] = ToolRegistry.allTools,
@@ -28,10 +31,9 @@ final class Orchestrator {
         systemPrompt: String,
         history: [LLMMessage],
         userMessage: String,
-        modelTier: ModelTier
+        modelTier: ModelTier,
+        assistantTurnID: UUID
     ) async throws -> OrchestratorTurn {
-        // 2.2b: assemble the full system prompt with always-on compact memory + user_context
-        // before the first client.complete. Rebuilt each turn — active summaries can change.
         let fullSystemPrompt = await Self.assemblePrompt(
             basePrompt: systemPrompt,
             hema: services.hema
@@ -91,14 +93,15 @@ final class Orchestrator {
                 )
             }
 
-            // All tool_result blocks for this round go into a SINGLE user message —
-            // Anthropic's API requires this; emitting one user message per tool_result is wrong.
+            // Single batched user message with all tool_result blocks (Anthropic requires this).
             var toolResultBlocks: [LLMContent] = []
+            var anyCancelled = false
             for use in toolUses {
                 let exchange = await executeToolUse(
                     id: use.id,
                     name: use.name,
-                    parametersJSON: use.input
+                    parametersJSON: use.input,
+                    assistantTurnID: assistantTurnID
                 )
                 toolExchanges.append(exchange)
                 toolResultBlocks.append(.toolResult(
@@ -106,6 +109,20 @@ final class Orchestrator {
                     content: exchange.result.content,
                     isError: exchange.result.isError
                 ))
+                // If Task was cancelled while awaiting confirmation, the delegate returns
+                // a {"status":"cancelled"} marker — surface as .userCancelled stop reason.
+                if exchange.result.content.contains("\"cancelled\"") && exchange.result.isError {
+                    anyCancelled = true
+                }
+            }
+
+            if anyCancelled {
+                return OrchestratorTurn(
+                    finalText: response.text,
+                    toolExchanges: toolExchanges,
+                    stoppedReason: .userCancelled,
+                    totalRounds: rounds
+                )
             }
 
             messages.append(LLMMessage(role: .user, content: toolResultBlocks))
@@ -115,7 +132,8 @@ final class Orchestrator {
     private func executeToolUse(
         id: String,
         name: String,
-        parametersJSON: String
+        parametersJSON: String,
+        assistantTurnID: UUID
     ) async -> ToolExchange {
         guard let toolType = registry.first(where: { $0.name == name }) else {
             return ToolExchange(
@@ -125,48 +143,52 @@ final class Orchestrator {
             )
         }
 
-        guard toolType.confirmationTier == .silent else {
+        // Silent tools execute directly.
+        if toolType.confirmationTier == .silent {
+            let context = ToolExecutionContext(
+                toolUseId: id,
+                chatSessionID: chatSessionID,
+                services: services
+            )
+            do {
+                let output = try await toolType.execute(parametersJSON: parametersJSON, context: context)
+                return ToolExchange(toolName: name, parametersJSON: parametersJSON, result: output)
+            } catch {
+                return ToolExchange(
+                    toolName: name,
+                    parametersJSON: parametersJSON,
+                    result: ToolOutput(
+                        toolUseId: id,
+                        content: "Tool error: \(error.localizedDescription)",
+                        isError: true
+                    )
+                )
+            }
+        }
+
+        // Non-silent: route to delegate (ChatViewModel) for confirmation.
+        guard let delegate else {
             return ToolExchange(
                 toolName: name,
                 parametersJSON: parametersJSON,
                 result: ToolOutput(
                     toolUseId: id,
-                    content: "Tool requires confirmation; UI not yet implemented in this build.",
+                    content: "Tool requires confirmation; no delegate available.",
                     isError: true
                 )
             )
         }
 
-        let context = ToolExecutionContext(
+        let output = await delegate.handlePendingAction(
+            toolName: name,
+            parametersJSON: parametersJSON,
             toolUseId: id,
-            chatSessionID: chatSessionID,
-            services: services
+            confirmationTier: toolType.confirmationTier,
+            assistantTurnID: assistantTurnID
         )
-
-        do {
-            let output = try await toolType.execute(parametersJSON: parametersJSON, context: context)
-            return ToolExchange(
-                toolName: name,
-                parametersJSON: parametersJSON,
-                result: output
-            )
-        } catch {
-            return ToolExchange(
-                toolName: name,
-                parametersJSON: parametersJSON,
-                result: ToolOutput(
-                    toolUseId: id,
-                    content: "Tool error: \(error.localizedDescription)",
-                    isError: true
-                )
-            )
-        }
+        return ToolExchange(toolName: name, parametersJSON: parametersJSON, result: output)
     }
 
-    /// Build the full system prompt: base prompt + (optional) compact_memory block + user_context block.
-    /// Compact memory block is omitted entirely when no active summaries exist (bootstrapping case)
-    /// or when the read fails — avoids Claude commenting on placeholder text.
-    /// The user_context block is always appended so retrieve_memory stays discoverable.
     private static func assemblePrompt(basePrompt: String, hema: HemaService) async -> String {
         let memories: [CompactMemory]
         do {
@@ -194,6 +216,13 @@ final class Orchestrator {
             """)
         }
 
+        let todayString = Date().formatted(.dateTime.weekday(.wide).year().month(.wide).day())
+        sections.append("""
+        <current_date>
+        Today is \(todayString). Resolve relative dates ("today", "tomorrow", "next Monday") against this.
+        </current_date>
+        """)
+
         sections.append("""
         <user_context>
         You have access to the user's accumulated memory through the retrieve_memory tool when \
@@ -211,8 +240,8 @@ final class Orchestrator {
 }
 
 struct OrchestratorTurn: Sendable {
-    let finalText: String                     // what the user sees
-    let toolExchanges: [ToolExchange]         // chronological list across all rounds
+    let finalText: String
+    let toolExchanges: [ToolExchange]
     let stoppedReason: OrchestratorStopReason
     let totalRounds: Int
 }
@@ -224,8 +253,9 @@ struct ToolExchange: Sendable {
 }
 
 enum OrchestratorStopReason: Sendable {
-    case naturalEnd                           // Claude finished without more tool calls
-    case maxRoundsReached                     // hit maxToolCallRounds cap
-    case toolError(String)                    // Reserved for future use (e.g., aborting on repeated tool failures); not emitted in 2.2a/2.2b.
-    case clientError(Error)                   // LLMClient threw
+    case naturalEnd
+    case maxRoundsReached
+    case toolError(String)                    // Reserved for future use.
+    case clientError(Error)
+    case userCancelled                        // user navigated away mid-confirmation
 }

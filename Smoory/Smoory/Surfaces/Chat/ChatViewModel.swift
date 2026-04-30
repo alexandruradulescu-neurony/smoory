@@ -10,7 +10,7 @@ final class ChatViewModel {
         let id: UUID
         let speaker: Speaker
         let text: String
-        let usedToolNames: [String]?     // dedup'd, only set on assistant turns that called tools
+        let usedToolNames: [String]?
     }
 
     enum TurnState: Sendable, Hashable {
@@ -21,10 +21,14 @@ final class ChatViewModel {
     private(set) var turns: [Turn] = []
     private(set) var state: TurnState = .idle
     var draft: String = ""
+    private(set) var pendingActions: [String: PendingAction] = [:]
+    let modelContainer: ModelContainer
 
     private let orchestrator: Orchestrator
     private let hema: HemaService
     private let chatSessionID: UUID
+    private let services: ToolServices
+    private var pendingContinuations: [String: CheckedContinuation<ToolOutput, Never>] = [:]
 
     private let systemPrompt = """
 You are Smoory, a personal AI assistant for the user. You're running on the user's Mac.
@@ -34,12 +38,15 @@ You have access to:
 - The user's active goals via get_active_goals
 - The user's open todos via get_open_todos
 - The user's memory of past conversations and learned facts via retrieve_memory
+- create_todo to propose adding a new todo (the user sees a confirmation card)
+- write_memory_fact to silently record high-confidence facts the user states (confidence >= 0.85)
 
-The compact summaries below are always-on. For specific past facts, names, or events, \
-use retrieve_memory with a focused query.
+Use create_todo when the user explicitly asks for a todo or you're capturing an action item.
+Use write_memory_fact only for high-confidence durable facts the user has stated about themselves, their world, or their preferences. Do not write low-confidence observations or temporary information.
 
-Be conversational, concise, and honest about what you don't know. If memory retrieval \
-returns nothing relevant, say so.
+The compact summaries below are always-on. For specific past facts, names, or events, use retrieve_memory with a focused query.
+
+Be conversational, concise, and honest about what you don't know. If memory retrieval returns nothing relevant, say so.
 """
 
     init(
@@ -49,6 +56,7 @@ returns nothing relevant, say so.
         client: LLMClient = AnthropicClient(),
         calendarService: CalendarService = CalendarService()
     ) {
+        self.modelContainer = modelContainer
         self.hema = hema
         self.chatSessionID = chatSessionID
         let services = ToolServices(
@@ -56,12 +64,14 @@ returns nothing relevant, say so.
             modelContainer: modelContainer,
             hema: hema
         )
+        self.services = services
         self.orchestrator = Orchestrator(
             client: client,
             registry: ToolRegistry.allTools,
             services: services,
             chatSessionID: chatSessionID
         )
+        self.orchestrator.delegate = self
     }
 
     func send() async {
@@ -73,11 +83,13 @@ returns nothing relevant, say so.
         draft = ""
         state = .sending
 
-        // Build history from prior turns. Filter out errorBubbles so a transient error doesn't
-        // poison the next request. Exclude the just-appended userTurn — orchestrator.send takes
-        // userMessage separately.
+        // Pre-create assistant turn placeholder so cards have a parent ID.
+        let assistantTurnID = UUID()
+        let placeholder = Turn(id: assistantTurnID, speaker: .assistant, text: "", usedToolNames: nil)
+        turns.append(placeholder)
+
         let history: [LLMMessage] = turns
-            .filter { $0.speaker != .errorBubble && $0.id != userTurn.id }
+            .filter { $0.speaker != .errorBubble && $0.id != userTurn.id && $0.id != assistantTurnID }
             .map { turn in
                 let role: LLMMessage.Role = (turn.speaker == .user) ? .user : .assistant
                 return LLMMessage(role: role, text: turn.text)
@@ -88,32 +100,38 @@ returns nothing relevant, say so.
                 systemPrompt: systemPrompt,
                 history: history,
                 userMessage: trimmed,
-                modelTier: .balanced
+                modelTier: .balanced,
+                assistantTurnID: assistantTurnID
             )
 
             switch result.stoppedReason {
-            case .naturalEnd, .maxRoundsReached:
+            case .naturalEnd, .maxRoundsReached, .userCancelled:
                 let usedNames = Self.deduplicate(result.toolExchanges.map(\.toolName))
-                let displayText = result.finalText.isEmpty ? "(empty response)" : result.finalText
-                turns.append(Turn(
-                    id: UUID(),
+                let displayText = result.finalText.isEmpty ? "" : result.finalText
+                replaceTurn(id: assistantTurnID, with: Turn(
+                    id: assistantTurnID,
                     speaker: .assistant,
                     text: displayText,
                     usedToolNames: usedNames.isEmpty ? nil : usedNames
                 ))
 
-                // 2.2b: persist the conversational text to hema, off the critical path.
-                // Errors aren't conversational content; only the success branch persists.
-                let userMessageToPersist = trimmed
-                let assistantTextToPersist = result.finalText
-                Task {
-                    await self.persistTurns(
-                        userMessage: userMessageToPersist,
-                        assistantReply: assistantTextToPersist
-                    )
+                let shouldPersist: Bool
+                switch result.stoppedReason {
+                case .naturalEnd, .maxRoundsReached: shouldPersist = true
+                default: shouldPersist = false
                 }
-
+                if shouldPersist {
+                    let userMessageToPersist = trimmed
+                    let assistantTextToPersist = result.finalText
+                    Task {
+                        await self.persistTurns(
+                            userMessage: userMessageToPersist,
+                            assistantReply: assistantTextToPersist
+                        )
+                    }
+                }
             case .clientError(let error):
+                removePlaceholder(id: assistantTurnID)
                 turns.append(Turn(
                     id: UUID(),
                     speaker: .errorBubble,
@@ -121,6 +139,7 @@ returns nothing relevant, say so.
                     usedToolNames: nil
                 ))
             case .toolError(let str):
+                removePlaceholder(id: assistantTurnID)
                 turns.append(Turn(
                     id: UUID(),
                     speaker: .errorBubble,
@@ -129,6 +148,7 @@ returns nothing relevant, say so.
                 ))
             }
         } catch {
+            removePlaceholder(id: assistantTurnID)
             turns.append(Turn(
                 id: UUID(),
                 speaker: .errorBubble,
@@ -139,10 +159,107 @@ returns nothing relevant, say so.
         state = .idle
     }
 
-    /// Writes the conversational pair to hema. Tool-use / tool-result blocks are NOT persisted —
-    /// they're not user-meaningful conversational content and would pollute vector retrieval.
-    /// Failures are logged but never surface to the chat — memory write outages should not
-    /// disrupt the conversation.
+    // MARK: - PendingAction transitions (called from PendingActionCard)
+
+    func enterEditMode(toolUseId: String) {
+        guard var action = pendingActions[toolUseId] else { return }
+        action.state = .editing
+        pendingActions[toolUseId] = action
+    }
+
+    func cancelEdit(toolUseId: String) {
+        guard var action = pendingActions[toolUseId] else { return }
+        action.state = .pending
+        pendingActions[toolUseId] = action
+    }
+
+    func commitEdit(toolUseId: String, newParametersJSON: String) {
+        guard var action = pendingActions[toolUseId] else { return }
+        action.editedParametersJSON = newParametersJSON
+        action.state = .pending
+        pendingActions[toolUseId] = action
+    }
+
+    func confirmAction(toolUseId: String) async {
+        guard var action = pendingActions[toolUseId] else { return }
+        action.state = .executing
+        pendingActions[toolUseId] = action
+
+        guard let toolType = ToolRegistry.tool(named: action.toolName) else {
+            resolveContinuation(toolUseId: toolUseId, output: ToolOutput(
+                toolUseId: toolUseId,
+                content: "Unknown tool",
+                isError: true
+            ))
+            action.state = .failed(reason: "Unknown tool")
+            pendingActions[toolUseId] = action
+            return
+        }
+
+        let parameters = action.effectiveParametersJSON
+        let context = ToolExecutionContext(
+            toolUseId: toolUseId,
+            chatSessionID: chatSessionID,
+            services: services
+        )
+
+        do {
+            let output = try await toolType.execute(parametersJSON: parameters, context: context)
+            let summary = Self.confirmedSummary(toolName: action.toolName,
+                                                  parametersJSON: parameters)
+            action.state = .confirmed(summary: summary)
+            pendingActions[toolUseId] = action
+            resolveContinuation(toolUseId: toolUseId, output: output)
+        } catch {
+            let reason = "Couldn't \(action.toolName) — \(error.localizedDescription)"
+            action.state = .failed(reason: reason)
+            pendingActions[toolUseId] = action
+            resolveContinuation(toolUseId: toolUseId, output: ToolOutput(
+                toolUseId: toolUseId,
+                content: "Tool error: \(error.localizedDescription)",
+                isError: true
+            ))
+        }
+    }
+
+    func declineAction(toolUseId: String) {
+        guard var action = pendingActions[toolUseId] else { return }
+        let primary = ToolRegistry.tool(named: action.toolName)?
+            .renderSummary(parametersJSON: action.effectiveParametersJSON)?
+            .primary
+        let title = ToolRegistry.tool(named: action.toolName)?
+            .renderSummary(parametersJSON: action.effectiveParametersJSON)?
+            .title ?? action.toolName
+        let summary = primary.map { "\(title) (\($0))" } ?? title
+        action.state = .declined(summary: summary)
+        pendingActions[toolUseId] = action
+
+        let json = #"{"status":"declined","note":"User declined this action; do not propose it again unless the user changes their mind"}"#
+        resolveContinuation(toolUseId: toolUseId, output: ToolOutput(
+            toolUseId: toolUseId,
+            content: json,
+            isError: false
+        ))
+    }
+
+    // MARK: - Internals
+
+    private func resolveContinuation(toolUseId: String, output: ToolOutput) {
+        if let continuation = pendingContinuations.removeValue(forKey: toolUseId) {
+            continuation.resume(returning: output)
+        }
+    }
+
+    private func replaceTurn(id: UUID, with newTurn: Turn) {
+        if let idx = turns.firstIndex(where: { $0.id == id }) {
+            turns[idx] = newTurn
+        }
+    }
+
+    private func removePlaceholder(id: UUID) {
+        turns.removeAll { $0.id == id && $0.text.isEmpty }
+    }
+
     private func persistTurns(userMessage: String, assistantReply: String) async {
         do {
             try await hema.writeTurn(MemoryTurn(
@@ -170,6 +287,16 @@ returns nothing relevant, say so.
         }
     }
 
+    private static func confirmedSummary(toolName: String, parametersJSON: String) -> String {
+        let summary = ToolRegistry.tool(named: toolName)?.renderSummary(parametersJSON: parametersJSON)
+        let verb: String
+        switch toolName {
+        case "create_todo": verb = "Created todo"
+        default: verb = "Done"
+        }
+        return summary.map { "\(verb): \($0.primary)" } ?? verb
+    }
+
     private static func deduplicate(_ names: [String]) -> [String] {
         var seen = Set<String>()
         return names.filter { seen.insert($0).inserted }
@@ -195,5 +322,46 @@ returns nothing relevant, say so.
             }
         }
         return error.localizedDescription
+    }
+}
+
+// MARK: - OrchestratorDelegate
+
+extension ChatViewModel: OrchestratorDelegate {
+    func handlePendingAction(
+        toolName: String,
+        parametersJSON: String,
+        toolUseId: String,
+        confirmationTier: ConfirmationTier,
+        assistantTurnID: UUID
+    ) async -> ToolOutput {
+        let action = PendingAction(
+            id: toolUseId,
+            toolName: toolName,
+            parametersJSON: parametersJSON,
+            editedParametersJSON: nil,
+            confirmationTier: confirmationTier,
+            proposedAt: Date(),
+            state: .pending,
+            assistantTurnID: assistantTurnID
+        )
+        pendingActions[toolUseId] = action
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                pendingContinuations[toolUseId] = continuation
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let continuation = self.pendingContinuations.removeValue(forKey: toolUseId) {
+                    continuation.resume(returning: ToolOutput(
+                        toolUseId: toolUseId,
+                        content: #"{"status":"cancelled"}"#,
+                        isError: true
+                    ))
+                }
+            }
+        }
     }
 }
