@@ -25,9 +25,10 @@ final class ChatViewModel {
     let modelContainer: ModelContainer
 
     private let orchestrator: Orchestrator
-    private let hema: HemaService
+    let hema: HemaService
     private let chatSessionID: UUID
     private let services: ToolServices
+    private let structuringService: StructuringService
     private var pendingContinuations: [String: CheckedContinuation<ToolOutput, Never>] = [:]
 
     private let systemPrompt = """
@@ -43,11 +44,11 @@ You have access to:
 - create_subtask to add a subtask under an existing parent todo
 - write_memory_fact to silently record high-confidence facts the user states (confidence >= 0.85)
 
-Use create_todo when the user explicitly asks for a todo or you're capturing an action item.
+Use create_todo ONLY when the user explicitly asks for a discrete action item — "add a todo", "remind me to X", "I need to call Y tomorrow". Do NOT infer todos from goals, aspirations, or general statements of intent ("I want to learn Italian" is a goal, not a todo). A separate structuring layer handles goals, projects, people, infrastructure, availability, and tone observations from your conversation; you should not duplicate its work.
 
 When the user references a todo by description ("the dentist one", "my high-priority Apollo todo"), call get_open_todos first to find the matching id, then call the action tool with that todo_id. Don't ask the user for the UUID. Subtasks are nested inside their parent in the get_open_todos response — use them when the user references a subtask.
 
-Use write_memory_fact only for high-confidence durable facts the user has stated about themselves, their world, or their preferences. Do not write low-confidence observations or temporary information.
+Use write_memory_fact ONLY for explicit, durable factual statements the user makes about themselves or their world — "I'm vegetarian", "my partner's name is Maria", "I live in Bucharest". Do NOT use it for goals, aspirations, project plans, or anything that sounds like ambient capture; the structuring layer surfaces those as candidates for the user to confirm. Confidence must be >= 0.85.
 
 The compact summaries below are always-on. For specific past facts, names, or events, use retrieve_memory with a focused query.
 
@@ -75,6 +76,10 @@ Be conversational, concise, and honest about what you don't know. If memory retr
             registry: ToolRegistry.allTools,
             services: services,
             chatSessionID: chatSessionID
+        )
+        self.structuringService = StructuringService(
+            client: client,
+            modelContainer: modelContainer
         )
         self.orchestrator.delegate = self
     }
@@ -128,10 +133,19 @@ Be conversational, concise, and honest about what you don't know. If memory retr
                 if shouldPersist {
                     let userMessageToPersist = trimmed
                     let assistantTextToPersist = result.finalText
+                    let exchangesSnapshot = result.toolExchanges
+                    let recentTurnsSnapshot = Self.recentTurnTexts(turns: turns, excluding: [userTurn.id, assistantTurnID])
                     Task {
                         await self.persistTurns(
                             userMessage: userMessageToPersist,
                             assistantReply: assistantTextToPersist
+                        )
+                    }
+                    Task {
+                        await self.runStructuringExtraction(
+                            userMessage: userMessageToPersist,
+                            recentTurns: recentTurnsSnapshot,
+                            toolExchanges: exchangesSnapshot
                         )
                     }
                 }
@@ -291,6 +305,53 @@ Be conversational, concise, and honest about what you don't know. If memory retr
         } catch {
             print("[chat] hema write failed: \(error)")
         }
+    }
+
+    // MARK: - Structuring layer trigger
+
+    /// Builds the AlreadyHandled hint set from this turn's tool exchanges so the structuring
+    /// prompt won't re-propose what Claude already wrote.
+    private func runStructuringExtraction(
+        userMessage: String,
+        recentTurns: [String],
+        toolExchanges: [ToolExchange]
+    ) async {
+        let createdTodos: [String] = toolExchanges
+            .filter { $0.toolName == "create_todo" }
+            .compactMap { Self.extractStringField("title", fromJSON: $0.parametersJSON) }
+        let writtenFacts: [String] = toolExchanges
+            .filter { $0.toolName == "write_memory_fact" }
+            .compactMap { Self.extractStringField("body", fromJSON: $0.parametersJSON) }
+
+        let alreadyHandled = StructuringPrompt.AlreadyHandled(
+            createdTodoTitles: createdTodos,
+            writtenFactBodies: writtenFacts
+        )
+
+        await structuringService.extract(
+            userMessage: userMessage,
+            recentTurns: recentTurns,
+            chatSessionID: chatSessionID,
+            sourceTurnID: nil,
+            alreadyHandled: alreadyHandled
+        )
+    }
+
+    private static func recentTurnTexts(turns: [Turn], excluding excludedIDs: [UUID]) -> [String] {
+        let kept = turns
+            .filter { $0.speaker != .errorBubble && !excludedIDs.contains($0.id) }
+            .suffix(6)
+        return kept.map { turn in
+            let prefix = turn.speaker == .user ? "User:" : "Assistant:"
+            return "\(prefix) \(turn.text)"
+        }
+    }
+
+    private static func extractStringField(_ field: String, fromJSON json: String) -> String? {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return obj[field] as? String
     }
 
     private static func confirmedSummary(toolName: String, parametersJSON: String, modelContainer: ModelContainer) -> String {

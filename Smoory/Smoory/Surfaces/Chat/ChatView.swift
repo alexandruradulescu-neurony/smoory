@@ -42,14 +42,22 @@ struct ChatView: View {
 private struct ChatViewContent: View {
     @Bindable var viewModel: ChatViewModel
     @FocusState private var isInputFocused: Bool
+    @State private var showCandidatesSheet: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
             transcript
+            CandidatesNotice(onTap: { showCandidatesSheet = true })
             Divider()
             composer
         }
         .onAppear { isInputFocused = true }
+        .sheet(isPresented: $showCandidatesSheet) {
+            CandidatesSheet(
+                hema: viewModel.hema,
+                onDone: { showCandidatesSheet = false }
+            )
+        }
     }
 
     private var transcript: some View {

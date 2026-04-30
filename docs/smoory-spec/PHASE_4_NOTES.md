@@ -114,6 +114,14 @@ the user has months of triage history to search across.
 
 ---
 
+## toneObservation candidate destination
+
+**Source:** milestone 2.4 (2026-04-30).
+
+toneObservation candidates currently land as facts tagged 'tone'. When email drafting lands in Phase 4, decide: match to existing Person records and update ToneProfile, or drop toneObservation as a candidate type entirely. Workaround should not become permanent behavior silently.
+
+---
+
 ## Adding more notes
 
 When new observations from usage point toward Phase 4 changes, append

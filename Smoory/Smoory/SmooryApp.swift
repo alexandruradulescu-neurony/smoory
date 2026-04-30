@@ -42,6 +42,7 @@ struct SmooryApp: App {
             ChatMessage.self,
             Schedule.self,
             RuleAdjustment.self,
+            CandidateWrite.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

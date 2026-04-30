@@ -43,3 +43,13 @@ This gap must not be silently lost. If Phase 3.4 lands without a reasoned choice
 Memory inspection has hard 500-row limit per query, no pagination. Personal-scale memory grows slowly; revisit if hema accumulates >1k facts or >5k turns. Pagination is straightforward (offset is already a parameter on hema methods); UI work is the addition.
 
 ---
+
+## Open gap from Phase 2 — Availability candidates not proactive
+
+**Decided in milestone 2.4 (2026-04-30).**
+
+Availability candidates currently go to the queue like any other candidate. Spec describes immediate proactive proposals (defer todos, decline meetings, set OOO) when the user states an availability change like 'I'll be off Tuesday'. Implement when first round of usage tells us whether the queue-and-confirm flow feels too slow for this specific case.
+
+Stopgap acceptance behavior (2.4): availability candidates are written as semantic facts with tag `["availability"]` and the user-stated end date as `expiresAt`. There is no `Availability` or `OffPeriod` entity yet — `Schedule` is for repeating brief/review schedules and is the wrong fit. Phase 3 should decide: introduce `OffPeriod`, reuse `Schedule` with a kind extension, or keep facts-as-availability and read them via tag query when proactive proposals run.
+
+---

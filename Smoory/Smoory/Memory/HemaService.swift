@@ -130,8 +130,12 @@ final class HemaService: @unchecked Sendable {
     // MARK: - Reads
 
     func readActiveCompactMemories() async throws -> [CompactMemory] {
+        // COALESCE nullable text columns: SQLiteVec caches column types from row 1 only and
+        // crashes on later NULLs (Database.swift:318/352).
         let rows = try await db.query("""
-            SELECT id, kind, body, word_count, generated_at, superseded_at, generating_model
+            SELECT id, kind, body, word_count, generated_at,
+                   COALESCE(superseded_at, '') AS superseded_at,
+                   COALESCE(generating_model, '') AS generating_model
             FROM compact_memory
             WHERE superseded_at IS NULL
             ORDER BY generated_at DESC
@@ -142,7 +146,10 @@ final class HemaService: @unchecked Sendable {
     func readFact(id: UUID) async throws -> SemanticFact? {
         let rows = try await db.query("""
             SELECT id, body, tags_json, entities_json, confidence, user_confirmed, is_private,
-                   created_at, expires_at, superseded_by, provenance_json
+                   created_at,
+                   COALESCE(expires_at, '') AS expires_at,
+                   COALESCE(superseded_by, '') AS superseded_by,
+                   COALESCE(provenance_json, '') AS provenance_json
             FROM semantic_facts
             WHERE id = ?
             LIMIT 1
@@ -221,8 +228,10 @@ final class HemaService: @unchecked Sendable {
     /// Throws if the embedder is missing or fails — retrieval cannot degrade gracefully.
     func retrieveSimilarTurns(query: String, k: Int = 5) async throws -> [(MemoryTurn, Double)] {
         let queryVector = try await embedQuery(query)
+        // COALESCE on nullable metadata_json — SQLiteVec column-type cache crash workaround.
         let rows = try await db.query("""
-            SELECT t.id, t.created_at, t.chat_session_id, t.role, t.content, t.metadata_json,
+            SELECT t.id, t.created_at, t.chat_session_id, t.role, t.content,
+                   COALESCE(t.metadata_json, '') AS metadata_json,
                    v.distance
             FROM memory_turns_vec v
             JOIN memory_turns t ON v.rowid = t.rowid
@@ -282,9 +291,13 @@ final class HemaService: @unchecked Sendable {
 
         params.append(k)
 
+        // COALESCE nullable text columns to avoid SQLiteVec's first-row column-type cache crash.
         let sql = """
             SELECT f.id, f.body, f.tags_json, f.entities_json, f.confidence, f.user_confirmed, f.is_private,
-                   f.created_at, f.expires_at, f.superseded_by, f.provenance_json,
+                   f.created_at,
+                   COALESCE(f.expires_at, '') AS expires_at,
+                   COALESCE(f.superseded_by, '') AS superseded_by,
+                   COALESCE(f.provenance_json, '') AS provenance_json,
                    sub.distance
             FROM (
                 SELECT rowid, distance
