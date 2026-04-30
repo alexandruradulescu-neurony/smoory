@@ -21,6 +21,10 @@ private struct ScheduledActionServiceKey: EnvironmentKey {
     static let defaultValue: ScheduledActionService? = nil
 }
 
+private struct NavigationStateKey: EnvironmentKey {
+    static let defaultValue: NavigationState? = nil
+}
+
 extension EnvironmentValues {
     var hemaState: HemaState {
         get { self[HemaStateKey.self] }
@@ -39,5 +43,11 @@ extension EnvironmentValues {
     var scheduledActionService: ScheduledActionService? {
         get { self[ScheduledActionServiceKey.self] }
         set { self[ScheduledActionServiceKey.self] = newValue }
+    }
+    /// App-level navigation state — lifted from ContentView so the notification delegate
+    /// can imperatively switch surfaces (morning-brief tap → focus Feed).
+    var navigationState: NavigationState? {
+        get { self[NavigationStateKey.self] }
+        set { self[NavigationStateKey.self] = newValue }
     }
 }

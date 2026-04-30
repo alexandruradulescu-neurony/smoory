@@ -325,6 +325,7 @@ Smoory's surfaced output. Every annotation, suggestion, alert, brief, or review 
 - `dismissedAt: Date?`
 - `archivedAt: Date?`
 - `provenance: FeedItemProvenance?` — info about which loop produced this item, for debugging. Optional in v1 because no FeedItem producers exist yet that can guarantee provenance; Phase 3 producers will populate it.
+- `payloadJSON: String?` — kind-specific structured payload (added milestone 3.4). For `.morningBrief`, carries the full `MorningBrief` JSON used by the Feed surface and the widget's structured rendering. Optional, default nil — older kinds leave it nil; readers always handle the nil case.
 
 **Sub-types:**
 

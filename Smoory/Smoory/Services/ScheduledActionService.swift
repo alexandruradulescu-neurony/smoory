@@ -318,6 +318,12 @@ final class ScheduledActionService {
     // MARK: - Notification scheduling
 
     private func scheduleNotification(for action: ScheduledAction) async {
+        // Morning briefs suppress the OS-scheduled notification — generation latency
+        // means the OS would fire "Your morning brief is ready" before the brief
+        // actually exists. The MorningBriefDispatcher fires a fresh notification with
+        // the headline as body once generation completes.
+        guard action.kind != .morningBrief else { return }
+
         let content = UNMutableNotificationContent()
         content.title = "Smoory"
         content.body = body(for: action)

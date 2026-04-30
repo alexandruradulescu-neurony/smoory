@@ -8,6 +8,7 @@ import Foundation
 final class AppGroupContainerWriter {
     private static let groupIdentifier = "group.com.assistant.smoory.shared"
     private static let snapshotFile = "scheduled-actions.json"
+    private static let morningBriefFile = "morning-brief.json"
 
     private let containerURL: URL
 
@@ -23,6 +24,22 @@ final class AppGroupContainerWriter {
 
     var snapshotURL: URL {
         containerURL.appendingPathComponent(Self.snapshotFile)
+    }
+
+    var morningBriefURL: URL {
+        containerURL.appendingPathComponent(Self.morningBriefFile)
+    }
+
+    func writeMorningBrief(_ brief: MorningBrief) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        do {
+            let data = try encoder.encode(brief)
+            try data.write(to: morningBriefURL, options: .atomic)
+        } catch {
+            print("[appgroup] morning brief write failed: \(error)")
+        }
     }
 
     func writeScheduledActionsSnapshot(_ actions: [ScheduledAction]) {

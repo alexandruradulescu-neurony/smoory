@@ -6,6 +6,7 @@ struct DebugCommands: Commands {
     let hemaState: HemaState
     let modelContainer: ModelContainer
     let scheduledActionService: ScheduledActionService?
+    let morningBriefDispatcher: MorningBriefDispatcher?
 
     var body: some Commands {
         CommandMenu("Debug") {
@@ -160,6 +161,42 @@ struct DebugCommands: Commands {
                 service: scheduledActionService,
                 modelContainer: modelContainer
             )
+
+            Divider()
+
+            Button("Generate morning brief now") {
+                guard let dispatcher = morningBriefDispatcher,
+                      case .ready(let hema) = hemaState,
+                      let svc = scheduledActionService
+                else {
+                    print("[debug] morning brief dispatcher not ready")
+                    return
+                }
+                _ = hema  // silence unused warning; keeps the readiness gate explicit
+                _ = svc
+                Task { @MainActor in
+                    // Pull any firing brief; otherwise run a one-shot generation against
+                    // the same generator path the dispatcher uses.
+                    await dispatcher.dispatchAllFiring()
+                    print("[debug] morning brief dispatch complete")
+                }
+            }
+
+            Button("Open today's brief JSON") {
+                let path = AppGroupContainerWriter()?.morningBriefURL.path(percentEncoded: false)
+                guard let path else {
+                    print("[debug] App Group container unavailable")
+                    return
+                }
+                let data = try? Data(contentsOf: URL(fileURLWithPath: path))
+                guard let data, let str = String(data: data, encoding: .utf8) else {
+                    print("[debug] morning-brief.json not found at \(path)")
+                    return
+                }
+                print("---- morning-brief.json (\(path)) ----")
+                print(str)
+                print("---- END ----")
+            }
 
             Divider()
 

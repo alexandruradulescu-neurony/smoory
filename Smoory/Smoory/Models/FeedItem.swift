@@ -18,6 +18,7 @@ final class FeedItem {
     var dismissedAt: Date?
     var archivedAt: Date?
     var provenance: FeedItemProvenance?
+    var payloadJSON: String?            // structured kind-specific payload (e.g., MorningBrief JSON)
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 

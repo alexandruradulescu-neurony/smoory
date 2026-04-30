@@ -23,6 +23,8 @@ struct SmooryApp: App {
     @State private var notificationDelegate = NotificationDelegate()
     @State private var pendingDayReview = PendingDayReviewState()
     @State private var firedReminderQueue = FiredReminderQueue()
+    @State private var navigationState = NavigationState()
+    @State private var morningBriefDispatcher: MorningBriefDispatcher?
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -70,6 +72,7 @@ struct SmooryApp: App {
                     .environment(\.chatSessionID, chatSessionID)
                     .environment(\.chatViewModel, chatViewModel)
                     .environment(\.scheduledActionService, scheduledActionService)
+                    .environment(\.navigationState, navigationState)
                     .sheet(isPresented: Binding(
                         get: { pendingDayReview.actionToPresent != nil },
                         set: { newValue in
@@ -112,7 +115,8 @@ struct SmooryApp: App {
             DebugCommands(
                 hemaState: hemaState,
                 modelContainer: sharedModelContainer,
-                scheduledActionService: scheduledActionService
+                scheduledActionService: scheduledActionService,
+                morningBriefDispatcher: morningBriefDispatcher
             )
         }
     }
@@ -131,6 +135,30 @@ struct SmooryApp: App {
                 chatSessionID: chatSessionID,
                 scheduledActionService: scheduledActionService
             )
+            // Morning brief dispatcher needs hema for retrieve_memory tool calls; build
+            // it now and (re)attach the notification delegate so morning_brief taps route
+            // through the dispatcher.
+            if let svc = scheduledActionService {
+                let dispatcher = MorningBriefDispatcher(
+                    generator: MorningBriefGenerator(
+                        modelContainer: sharedModelContainer,
+                        hema: hema,
+                        calendarService: CalendarService(),
+                        appGroupWriter: AppGroupContainerWriter(),
+                        scheduledActionService: svc
+                    ),
+                    scheduledActionService: svc,
+                    modelContainer: sharedModelContainer
+                )
+                morningBriefDispatcher = dispatcher
+                notificationDelegate.attach(
+                    service: svc,
+                    pendingDayReview: pendingDayReview,
+                    firedReminderQueue: firedReminderQueue,
+                    navigationState: navigationState,
+                    morningBriefDispatcher: dispatcher
+                )
+            }
             print("[smoory] hema ready at \(hema.databaseURL.path(percentEncoded: false))")
         } catch {
             hemaState = .failed(error.localizedDescription)
@@ -148,11 +176,9 @@ struct SmooryApp: App {
             appGroupWriter: writer
         )
         scheduledActionService = service
-        notificationDelegate.attach(
-            service: service,
-            pendingDayReview: pendingDayReview,
-            firedReminderQueue: firedReminderQueue
-        )
+        // Note: NotificationDelegate is attached later, after hema readies and the
+        // morning-brief dispatcher exists. Until then, notification taps are dropped —
+        // acceptable because the polling timer also hasn't started yet.
         if writer == nil {
             print("[scheduled] App Group container unavailable — widget snapshot writes are disabled")
         } else {
@@ -220,10 +246,22 @@ struct SmooryApp: App {
     private func startPollingIfNeeded() {
         guard pollingTimer == nil, let service = scheduledActionService else { return }
         // Catch any backlog accumulated while the app was closed.
-        Task { @MainActor in await service.processOverdue() }
+        Task { @MainActor in
+            await service.processOverdue()
+            await dispatchFiringMorningBriefs()
+        }
         // 5-minute foreground polling per Phase 3 decision.
         pollingTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
-            Task { @MainActor in await service.processOverdue() }
+            Task { @MainActor in
+                await service.processOverdue()
+                await dispatchFiringMorningBriefs()
+            }
         }
+    }
+
+    @MainActor
+    private func dispatchFiringMorningBriefs() async {
+        guard let dispatcher = morningBriefDispatcher else { return }
+        await dispatcher.dispatchAllFiring()
     }
 }

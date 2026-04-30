@@ -261,11 +261,16 @@ private struct FeedListContent: View {
                 onReject: { Task { await reject(candidate) } }
             )
         case .feedItem(let item):
-            FeedItemRow(
-                item: item,
-                isExpanded: expandedRowID == item.id,
-                onToggleExpand: { toggleExpand(item.id) }
-            )
+            switch item.kind {
+            case .morningBrief:
+                MorningBriefFeedRow(item: item)
+            default:
+                FeedItemRow(
+                    item: item,
+                    isExpanded: expandedRowID == item.id,
+                    onToggleExpand: { toggleExpand(item.id) }
+                )
+            }
         }
     }
 

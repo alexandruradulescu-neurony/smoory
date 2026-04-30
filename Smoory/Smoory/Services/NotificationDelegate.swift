@@ -8,15 +8,21 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     private weak var service: ScheduledActionService?
     private weak var pendingDayReview: PendingDayReviewState?
     private weak var firedReminderQueue: FiredReminderQueue?
+    private weak var navigationState: NavigationState?
+    private weak var morningBriefDispatcher: MorningBriefDispatcher?
 
     func attach(
         service: ScheduledActionService,
         pendingDayReview: PendingDayReviewState,
-        firedReminderQueue: FiredReminderQueue
+        firedReminderQueue: FiredReminderQueue,
+        navigationState: NavigationState,
+        morningBriefDispatcher: MorningBriefDispatcher
     ) {
         self.service = service
         self.pendingDayReview = pendingDayReview
         self.firedReminderQueue = firedReminderQueue
+        self.navigationState = navigationState
+        self.morningBriefDispatcher = morningBriefDispatcher
         UNUserNotificationCenter.current().delegate = self
     }
 
@@ -116,7 +122,17 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
             queue.enqueue(action: row)
             print("[notif] enqueued reminder banner for \(id)")
 
-        case .morningBrief, .weekReview, .goalNudge:
+        case .morningBrief:
+            navigationState?.selectedSurface = .feed
+            print("[notif] morning brief tapped — focusing Feed")
+            // If the brief hasn't been generated yet (user tapped before polling tick
+            // picked it up), trigger generation now. Single-flight in dispatcher
+            // collapses concurrent triggers.
+            if let dispatcher = morningBriefDispatcher {
+                Task { @MainActor in await dispatcher.dispatch(actionID: id) }
+            }
+
+        case .weekReview, .goalNudge:
             print("[notif] kind=\(row.kind) tapped — no consumer wired yet for this kind")
         }
     }

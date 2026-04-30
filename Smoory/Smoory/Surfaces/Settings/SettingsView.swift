@@ -28,8 +28,10 @@ struct SettingsView: View {
     @State private var onboardingFeedback: String?
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     @State private var dayReviewVM: DayReviewSettingsViewModel?
+    @State private var morningBriefVM: MorningBriefSettingsViewModel?
 
     @Bindable private var failureCounter = StructuringFailureCounter.shared
+    @Bindable private var briefFailureCounter = MorningBriefFailureCounter.shared
 
     var body: some View {
         Form {
@@ -78,6 +80,10 @@ struct SettingsView: View {
                 dayReviewSection(viewModel: dayReviewVM)
             }
 
+            if let morningBriefVM {
+                morningBriefSection(viewModel: morningBriefVM)
+            }
+
             Section("Notifications") {
                 HStack {
                     Image(systemName: notificationStatus == .authorized ? "bell.fill" : "bell.slash")
@@ -123,6 +129,19 @@ struct SettingsView: View {
                         .font(.smoory_caption)
                         .foregroundStyle(.tertiary)
                 }
+
+                HStack {
+                    Text("Morning brief failures since launch")
+                    Spacer()
+                    Text("\(briefFailureCounter.count)")
+                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                }
+                if briefFailureCounter.count > 0 {
+                    Text("A failed brief retries once with a stricter prompt; persistent failures are usually JSON-format drift from the active provider.")
+                        .font(.smoory_caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .formStyle(.grouped)
@@ -136,6 +155,30 @@ struct SettingsView: View {
                     modelContainer: modelContext.container,
                     service: scheduledActionService
                 )
+            }
+            if morningBriefVM == nil {
+                morningBriefVM = MorningBriefSettingsViewModel(
+                    modelContainer: modelContext.container,
+                    service: scheduledActionService
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func morningBriefSection(viewModel: MorningBriefSettingsViewModel) -> some View {
+        @Bindable var vm = viewModel
+        Section("Morning brief") {
+            Toggle("Enable morning brief", isOn: $vm.morningBriefEnabled)
+            if vm.morningBriefEnabled {
+                DatePicker(
+                    "Time",
+                    selection: $vm.morningBriefTime,
+                    displayedComponents: [.hourAndMinute]
+                )
+                Text("Smoory will prepare a daily focus brief at this time. Allow ~30s for generation.")
+                    .font(.smoory_caption)
+                    .foregroundStyle(.tertiary)
             }
         }
     }

@@ -9,16 +9,32 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @State private var selection: Surface? = .feed
+    @Environment(\.navigationState) private var navigationState
+    /// Local fallback so the previews / tests without env injection still work.
+    @State private var localSelection: Surface? = .feed
+
+    private var selectionBinding: Binding<Surface?> {
+        if let nav = navigationState {
+            return Binding(
+                get: { nav.selectedSurface },
+                set: { nav.selectedSurface = $0 }
+            )
+        }
+        return $localSelection
+    }
+
+    private var resolvedSelection: Surface? {
+        navigationState?.selectedSurface ?? localSelection
+    }
 
     var body: some View {
         NavigationSplitView {
-            List(Surface.allCases, id: \.self, selection: $selection) { surface in
+            List(Surface.allCases, id: \.self, selection: selectionBinding) { surface in
                 Label(surface.title, systemImage: surface.symbol)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
         } detail: {
-            switch selection {
+            switch resolvedSelection {
             case .feed: FeedView()
             case .todos: TodosView()
             case .chat: ChatView()
