@@ -1,6 +1,24 @@
 import Foundation
 import SwiftData
 
+/// Typed errors thrown from `performAction` on todo tools. The tool's `execute` wrapper
+/// translates these into Anthropic-shaped error outputs.
+enum TodoToolError: LocalizedError {
+    case todoNotFound
+    case invalidParent
+    case dateParseFailed
+    case missingTitle
+
+    var errorDescription: String? {
+        switch self {
+        case .todoNotFound: return "Todo not found"
+        case .invalidParent: return "Cannot nest subtasks: the referenced parent is itself a subtask. Only one level allowed."
+        case .dateParseFailed: return "Could not parse the date"
+        case .missingTitle: return "Title is required"
+        }
+    }
+}
+
 /// Shared utilities for the family of Todo tools (complete/update/defer/delete/create_subtask).
 enum TodoToolUtils {
     static func decode<T: Decodable>(_ type: T.Type, from jsonString: String) throws -> T {

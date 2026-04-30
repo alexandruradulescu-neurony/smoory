@@ -48,10 +48,33 @@ enum UpdateTodoTool: Tool {
 
     static func execute(parametersJSON: String, context: ToolExecutionContext) async throws -> ToolOutput {
         let input = try TodoToolUtils.decode(Input.self, from: parametersJSON)
-        let modelContext = ModelContext(context.services.modelContainer)
+        guard let uuid = UUID(uuidString: input.todo_id) else {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.todoNotFound.errorDescription ?? "")
+        }
+        do {
+            let todo = try Self.performAction(
+                todoID: uuid,
+                input: input,
+                modelContainer: context.services.modelContainer
+            )
+            let json = #"{"status":"updated","id":"\#(todo.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(todo.title))"}"#
+            return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        } catch {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
+        }
+    }
 
-        guard let todo = TodoToolUtils.fetchTodo(id: input.todo_id, in: modelContext) else {
-            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: "Todo not found")
+    /// Tool path: applies field-present semantics from `Input` (snake_case JSON shape).
+    /// Empty strings on `due_date`/`role_slug` clear those fields; nil leaves them alone.
+    @discardableResult
+    static func performAction(
+        todoID: UUID,
+        input: Input,
+        modelContainer: ModelContainer
+    ) throws -> Todo {
+        let context = ModelContext(modelContainer)
+        guard let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) else {
+            throw TodoToolError.todoNotFound
         }
 
         if let title = input.title { todo.title = title }
@@ -71,16 +94,37 @@ enum UpdateTodoTool: Tool {
                 todo.role = nil
             } else {
                 let descriptor = FetchDescriptor<Role>()
-                let allRoles = (try? modelContext.fetch(descriptor)) ?? []
+                let allRoles = (try? context.fetch(descriptor)) ?? []
                 todo.role = allRoles.first(where: { $0.slug == slug }) ?? todo.role
             }
         }
         todo.updatedAt = Date()
+        try context.save()
+        return todo
+    }
 
-        try modelContext.save()
-
-        let json = #"{"status":"updated","id":"\#(todo.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(todo.title))"}"#
-        return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+    /// Surface path: caller hands typed values for everything; we set them all and save.
+    /// Used by the detail view's Save button.
+    @discardableResult
+    static func saveChanges(
+        to todo: Todo,
+        title: String,
+        notes: String,
+        dueDate: Date?,
+        priority: TodoPriority,
+        role: Role?,
+        in context: ModelContext
+    ) throws -> Todo {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { throw TodoToolError.missingTitle }
+        todo.title = trimmed
+        todo.notes = notes
+        todo.dueDate = dueDate
+        todo.priority = priority
+        todo.role = role
+        todo.updatedAt = Date()
+        try context.save()
+        return todo
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {

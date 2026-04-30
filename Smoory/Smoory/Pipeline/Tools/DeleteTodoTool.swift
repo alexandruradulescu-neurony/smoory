@@ -30,30 +30,62 @@ enum DeleteTodoTool: Tool {
 
     static func execute(parametersJSON: String, context: ToolExecutionContext) async throws -> ToolOutput {
         let input = try TodoToolUtils.decode(Input.self, from: parametersJSON)
-        let modelContext = ModelContext(context.services.modelContainer)
-
-        guard let todo = TodoToolUtils.fetchTodo(id: input.todo_id, in: modelContext) else {
-            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: "Todo not found")
+        guard let uuid = UUID(uuidString: input.todo_id) else {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.todoNotFound.errorDescription ?? "")
         }
+        do {
+            let result = try Self.performAction(todoID: uuid, modelContainer: context.services.modelContainer)
+            let json = #"{"status":"archived","id":"\#(result.todo.id.uuidString)","subtasks_archived":\#(result.archivedSubtaskIDs.count)}"#
+            return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        } catch {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
+        }
+    }
 
+    struct ArchiveResult {
+        let todo: Todo
+        let archivedSubtaskIDs: [UUID]
+    }
+
+    @discardableResult
+    static func performAction(todoID: UUID, modelContainer: ModelContainer) throws -> ArchiveResult {
+        let context = ModelContext(modelContainer)
+        guard let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) else {
+            throw TodoToolError.todoNotFound
+        }
         let now = Date()
         todo.isArchived = true
         todo.archivedAt = now
         todo.updatedAt = now
 
-        // Cascade archive to subtasks — mirrors the cascade-delete rule.
-        var archivedSubtaskCount = 0
+        var archivedIDs: [UUID] = []
         for sub in todo.subtasks where !sub.isArchived {
             sub.isArchived = true
             sub.archivedAt = now
             sub.updatedAt = now
-            archivedSubtaskCount += 1
+            archivedIDs.append(sub.id)
         }
+        try context.save()
+        return ArchiveResult(todo: todo, archivedSubtaskIDs: archivedIDs)
+    }
 
-        try modelContext.save()
-
-        let json = #"{"status":"archived","id":"\#(todo.id.uuidString)","subtasks_archived":\#(archivedSubtaskCount)}"#
-        return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+    /// Restores a previously archived todo and a specified set of its subtasks.
+    /// Used by the undo banner. Idempotent: missing ids are ignored.
+    static func undoArchive(todoID: UUID, archivedSubtaskIDs: [UUID], modelContainer: ModelContainer) throws {
+        let context = ModelContext(modelContainer)
+        if let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) {
+            todo.isArchived = false
+            todo.archivedAt = nil
+            todo.updatedAt = Date()
+        }
+        for subID in archivedSubtaskIDs {
+            if let sub = TodoToolUtils.fetchTodo(id: subID.uuidString, in: context) {
+                sub.isArchived = false
+                sub.archivedAt = nil
+                sub.updatedAt = Date()
+            }
+        }
+        try context.save()
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {

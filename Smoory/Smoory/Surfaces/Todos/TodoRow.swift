@@ -3,46 +3,53 @@ import SwiftUI
 struct TodoRow: View {
     let todo: Todo
     let isExpanded: Bool
+    let onComplete: () -> Void
     let onToggleExpand: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            Circle()
-                .stroke(Color.secondary.opacity(0.4), lineWidth: 1.5)
-                .frame(width: 20, height: 20)
+            Button(action: onComplete) {
+                Image(systemName: "circle")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Mark complete")
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(todo.title).font(.body)
+            NavigationLink(value: todo.id) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(todo.title).font(.body)
 
-                HStack(spacing: 6) {
-                    if let dueDate = todo.dueDate {
-                        DueDatePill(dueDate: dueDate, group: DueDateGroup.group(for: todo))
-                    }
-                    if todo.priority != .normal {
-                        PriorityIndicator(priority: todo.priority)
-                    }
-                    if let role = todo.role {
-                        RoleBadge(name: role.name, colorHex: role.colorHex)
-                    }
-                    if !todo.subtasks.isEmpty {
-                        let progress = todo.subtaskProgress
-                        SubtaskProgressBadge(completed: progress.completed, total: progress.total)
+                    HStack(spacing: 6) {
+                        if let dueDate = todo.dueDate {
+                            DueDatePill(dueDate: dueDate, group: DueDateGroup.group(for: todo))
+                        }
+                        if todo.priority != .normal {
+                            PriorityIndicator(priority: todo.priority)
+                        }
+                        if let role = todo.role {
+                            RoleBadge(name: role.name, colorHex: role.colorHex)
+                        }
+                        if !todo.subtasks.filter({ !$0.isArchived }).isEmpty {
+                            let progress = todo.subtaskProgress
+                            SubtaskProgressBadge(completed: progress.completed, total: progress.total)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            Spacer()
-
-            if !todo.subtasks.isEmpty {
+            if !todo.subtasks.filter({ !$0.isArchived }).isEmpty {
                 Button(action: onToggleExpand) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .foregroundStyle(.tertiary)
                         .imageScale(.small)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
             }
         }
         .padding(.vertical, 4)
-        .contentShape(Rectangle())
     }
 }

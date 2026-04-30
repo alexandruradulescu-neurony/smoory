@@ -55,7 +55,6 @@ enum CreateTodoTool: Tool {
         let input = try Self.decodeInput(parametersJSON)
         let modelContext = ModelContext(context.services.modelContainer)
 
-        // Resolve role slug to a Role entity if one matches.
         var role: Role? = nil
         if let slug = input.role, !slug.isEmpty {
             let descriptor = FetchDescriptor<Role>()
@@ -63,35 +62,56 @@ enum CreateTodoTool: Tool {
             role = allRoles.first(where: { $0.slug == slug })
         }
 
-        let dueDate: Date? = input.due_date.flatMap(Self.parseDueDate)
+        let priority = TodoToolUtils.priority(from: input.priority) ?? .normal
+        let dueDate = input.due_date.flatMap(Self.parseDueDate)
 
-        let priority: TodoPriority = {
-            switch input.priority?.lowercased() {
-            case "low": return .low
-            case "high": return .high
-            case "urgent": return .urgent
-            default: return .normal
-            }
-        }()
+        do {
+            let todo = try Self.performAction(
+                title: input.title,
+                notes: input.notes ?? "",
+                dueDate: dueDate,
+                priority: priority,
+                role: role,
+                source: .aiProposal,
+                modelContainer: context.services.modelContainer
+            )
+            let payload: [String: String] = [
+                "status": "created",
+                "id": todo.id.uuidString,
+                "title": todo.title,
+            ]
+            let json = try Self.encodeJSON(payload)
+            return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        } catch {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
+        }
+    }
 
+    /// Direct creation path used by both the chat-tool wrapper and the surface quick-add.
+    /// Caller resolves Role; this function accepts a typed reference.
+    static func performAction(
+        title: String,
+        notes: String = "",
+        dueDate: Date? = nil,
+        priority: TodoPriority = .normal,
+        role: Role? = nil,
+        source: TodoSource = .aiProposal,
+        modelContainer: ModelContainer
+    ) throws -> Todo {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { throw TodoToolError.missingTitle }
+
+        let context = ModelContext(modelContainer)
         let todo = Todo()
-        todo.title = input.title
-        todo.notes = input.notes ?? ""
+        todo.title = trimmed
+        todo.notes = notes
         todo.dueDate = dueDate
         todo.priority = priority
         todo.role = role
-        todo.source = .aiProposal
-
-        modelContext.insert(todo)
-        try modelContext.save()
-
-        let payload: [String: String] = [
-            "status": "created",
-            "id": todo.id.uuidString,
-            "title": todo.title,
-        ]
-        let json = try Self.encodeJSON(payload)
-        return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        todo.source = source
+        context.insert(todo)
+        try context.save()
+        return todo
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {

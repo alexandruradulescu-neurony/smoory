@@ -38,33 +38,51 @@ enum DeferTodoTool: Tool {
 
     static func execute(parametersJSON: String, context: ToolExecutionContext) async throws -> ToolOutput {
         let input = try TodoToolUtils.decode(Input.self, from: parametersJSON)
-        let modelContext = ModelContext(context.services.modelContainer)
-
-        guard let todo = TodoToolUtils.fetchTodo(id: input.todo_id, in: modelContext) else {
-            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: "Todo not found")
+        guard let uuid = UUID(uuidString: input.todo_id) else {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.todoNotFound.errorDescription ?? "")
         }
-
         guard let newDate = CreateTodoTool.parseDueDate(input.new_due_date) else {
-            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: "Could not parse new_due_date")
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.dateParseFailed.errorDescription ?? "")
         }
+        do {
+            let todo = try Self.performAction(
+                todoID: uuid,
+                newDueDate: newDate,
+                reason: input.reason,
+                modelContainer: context.services.modelContainer
+            )
+            let json = #"{"status":"deferred","id":"\#(todo.id.uuidString)","deferral_count":\#(todo.deferralCount)}"#
+            return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        } catch {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
+        }
+    }
 
+    @discardableResult
+    static func performAction(
+        todoID: UUID,
+        newDueDate: Date,
+        reason: String? = nil,
+        modelContainer: ModelContainer
+    ) throws -> Todo {
+        let context = ModelContext(modelContainer)
+        guard let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) else {
+            throw TodoToolError.todoNotFound
+        }
         if let oldDue = todo.dueDate {
             todo.deferredFrom = oldDue
         }
-        todo.dueDate = newDate
+        todo.dueDate = newDueDate
         todo.deferralCount += 1
         todo.updatedAt = Date()
 
-        if let reason = input.reason?.trimmingCharacters(in: .whitespaces), !reason.isEmpty {
+        if let reason = reason?.trimmingCharacters(in: .whitespaces), !reason.isEmpty {
             let stamp = Date().formatted(.dateTime.year().month(.abbreviated).day())
             let line = "\n[Deferred \(stamp): \(reason)]"
             todo.notes = todo.notes + line
         }
-
-        try modelContext.save()
-
-        let json = #"{"status":"deferred","id":"\#(todo.id.uuidString)","deferral_count":\#(todo.deferralCount)}"#
-        return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        try context.save()
+        return todo
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {

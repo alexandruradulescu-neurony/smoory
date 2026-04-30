@@ -49,44 +49,71 @@ enum CreateSubtaskTool: Tool {
 
     static func execute(parametersJSON: String, context: ToolExecutionContext) async throws -> ToolOutput {
         let input = try TodoToolUtils.decode(Input.self, from: parametersJSON)
+        guard let parentUUID = UUID(uuidString: input.parent_todo_id) else {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.todoNotFound.errorDescription ?? "")
+        }
         let modelContext = ModelContext(context.services.modelContainer)
 
-        guard let parent = TodoToolUtils.fetchTodo(id: input.parent_todo_id, in: modelContext) else {
-            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: "Parent todo not found")
+        var roleOverride: Role? = nil
+        if let slug = input.role_slug, !slug.isEmpty {
+            let descriptor = FetchDescriptor<Role>()
+            let allRoles = (try? modelContext.fetch(descriptor)) ?? []
+            roleOverride = allRoles.first(where: { $0.slug == slug })
         }
 
-        if parent.parentTodo != nil {
-            return TodoToolUtils.errorOutput(
-                toolUseId: context.toolUseId,
-                message: "Cannot nest subtasks: the referenced parent is itself a subtask. Only one level allowed."
+        let priority = TodoToolUtils.priority(from: input.priority) ?? .normal
+        let dueDate = input.due_date.flatMap(CreateTodoTool.parseDueDate)
+
+        do {
+            let subtask = try Self.performAction(
+                parentTodoID: parentUUID,
+                title: input.title,
+                dueDate: dueDate,
+                priority: priority,
+                roleOverride: roleOverride,
+                source: .aiProposal,
+                modelContainer: context.services.modelContainer
             )
+            let json = #"{"status":"created","id":"\#(subtask.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(subtask.title))","parent_id":"\#(input.parent_todo_id)"}"#
+            return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        } catch {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
         }
+    }
 
-        let role: Role? = {
-            if let slug = input.role_slug, !slug.isEmpty {
-                let descriptor = FetchDescriptor<Role>()
-                let allRoles = (try? modelContext.fetch(descriptor)) ?? []
-                return allRoles.first(where: { $0.slug == slug }) ?? parent.role
-            }
-            return parent.role
-        }()
+    /// Direct subtask creation. Pass `roleOverride: nil` to inherit the parent's role; pass a Role
+    /// reference to use that explicitly.
+    @discardableResult
+    static func performAction(
+        parentTodoID: UUID,
+        title: String,
+        dueDate: Date? = nil,
+        priority: TodoPriority = .normal,
+        roleOverride: Role? = nil,
+        source: TodoSource = .aiProposal,
+        modelContainer: ModelContainer
+    ) throws -> Todo {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { throw TodoToolError.missingTitle }
 
-        let priority: TodoPriority = TodoToolUtils.priority(from: input.priority) ?? .normal
-        let dueDate: Date? = input.due_date.flatMap(CreateTodoTool.parseDueDate)
+        let context = ModelContext(modelContainer)
+        guard let parent = TodoToolUtils.fetchTodo(id: parentTodoID.uuidString, in: context) else {
+            throw TodoToolError.todoNotFound
+        }
+        if parent.parentTodo != nil {
+            throw TodoToolError.invalidParent
+        }
 
         let subtask = Todo()
-        subtask.title = input.title
+        subtask.title = trimmed
         subtask.parentTodo = parent
-        subtask.role = role
+        subtask.role = roleOverride ?? parent.role
         subtask.priority = priority
         subtask.dueDate = dueDate
-        subtask.source = .aiProposal
-
-        modelContext.insert(subtask)
-        try modelContext.save()
-
-        let json = #"{"status":"created","id":"\#(subtask.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(subtask.title))","parent_id":"\#(parent.id.uuidString)"}"#
-        return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        subtask.source = source
+        context.insert(subtask)
+        try context.save()
+        return subtask
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {

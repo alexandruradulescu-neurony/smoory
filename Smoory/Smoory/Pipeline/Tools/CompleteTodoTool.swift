@@ -29,19 +29,29 @@ enum CompleteTodoTool: Tool {
 
     static func execute(parametersJSON: String, context: ToolExecutionContext) async throws -> ToolOutput {
         let input = try TodoToolUtils.decode(Input.self, from: parametersJSON)
-        let modelContext = ModelContext(context.services.modelContainer)
-
-        guard let todo = TodoToolUtils.fetchTodo(id: input.todo_id, in: modelContext) else {
-            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: "Todo not found")
+        guard let uuid = UUID(uuidString: input.todo_id) else {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.todoNotFound.errorDescription ?? "")
         }
+        do {
+            let todo = try Self.performAction(todoID: uuid, modelContainer: context.services.modelContainer)
+            let json = #"{"status":"completed","id":"\#(todo.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(todo.title))"}"#
+            return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        } catch {
+            return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
+        }
+    }
 
+    @discardableResult
+    static func performAction(todoID: UUID, modelContainer: ModelContainer) throws -> Todo {
+        let context = ModelContext(modelContainer)
+        guard let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) else {
+            throw TodoToolError.todoNotFound
+        }
         todo.isCompleted = true
         todo.completedAt = Date()
         todo.updatedAt = Date()
-        try modelContext.save()
-
-        let json = #"{"status":"completed","id":"\#(todo.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(todo.title))"}"#
-        return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
+        try context.save()
+        return todo
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {
