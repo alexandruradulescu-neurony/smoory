@@ -71,6 +71,18 @@ Goal nudge (optional):
 - Brief and curious. "You've been chipping at the Latin goal — any thoughts on a 10-minute session today?"
 - NOT nagging. The user can ignore it without guilt.
 
+Goal nudge eligibility — RATE LIMIT:
+- Each goal can only be nudged once every 7 days.
+- The get_active_goals tool returns a "lastNudgedAt" field per goal (ISO 8601 string, or absent if never nudged).
+- A goal is INELIGIBLE for nudging if lastNudgedAt is within the last 7 days of today.
+- A goal is ELIGIBLE if lastNudgedAt is missing or more than 7 days old.
+- If ALL active goals are ineligible, set goalNudge to null. Do NOT pick the least-recently-nudged just to fill the field.
+
+Goal nudge title — STRICT MATCH:
+- goalTitle MUST be the literal title of a goal returned by get_active_goals. Do not paraphrase, summarize, or invent goal titles.
+- If you want to nudge about a goal, use its exact title verbatim.
+- If no goal title fits, set goalNudge to null. Do not fabricate a title from a semantic fact, a memory turn, or any other source.
+
 Tools available:
 - get_calendar_window — fetch today's calendar (call this every brief)
 - get_open_todos — fetch open todos (call this every brief)
@@ -93,22 +105,87 @@ and the last must be `}`.
     /// Returns nil on any failure — caller decides retry vs surface error.
     static func parse(_ raw: String, generatedAt: Date, forDate: Date) -> MorningBrief? {
         let stripped = stripFences(raw).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !stripped.isEmpty, let data = stripped.data(using: .utf8) else { return nil }
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        guard let payload = try? decoder.decode(MorningBriefPayload.self, from: data) else {
+        let scoped = extractFirstJSONObject(stripped) ?? stripped
+        guard !scoped.isEmpty, let data = scoped.data(using: .utf8) else {
+            print("[brief] parse failed — empty/non-utf8. raw prefix: \(raw.prefix(400))")
             return nil
         }
-        return MorningBrief(
-            id: UUID(),
-            generatedAt: generatedAt,
-            forDate: forDate,
-            headline: payload.headline,
-            secondaryItems: payload.secondaryItems,
-            calendar: payload.calendar,
-            reflectiveNote: payload.reflectiveNote,
-            goalNudge: payload.goalNudge
-        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let s = try container.decode(String.self)
+            if let d = lenientISO8601(s) { return d }
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unrecognized ISO 8601 date: \(s)"
+            )
+        }
+        do {
+            let payload = try decoder.decode(MorningBriefPayload.self, from: data)
+            return MorningBrief(
+                id: UUID(),
+                generatedAt: generatedAt,
+                forDate: forDate,
+                headline: payload.headline,
+                secondaryItems: payload.secondaryItems,
+                calendar: payload.calendar,
+                reflectiveNote: payload.reflectiveNote,
+                goalNudge: payload.goalNudge
+            )
+        } catch {
+            print("[brief] parse failed — decode error: \(error). raw prefix: \(scoped.prefix(400))")
+            return nil
+        }
+    }
+
+    /// Tries the common ISO 8601 shapes the LLM emits: with/without offset, with/without
+    /// fractional seconds, Z suffix. Falls back to a plain date if no time component.
+    private static func lenientISO8601(_ s: String) -> Date? {
+        let strict = ISO8601DateFormatter()
+        strict.formatOptions = [.withInternetDateTime]
+        if let d = strict.date(from: s) { return d }
+        let frac = ISO8601DateFormatter()
+        frac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = frac.date(from: s) { return d }
+        // No-offset variants — assume current timezone.
+        let local = DateFormatter()
+        local.locale = Locale(identifier: "en_US_POSIX")
+        local.timeZone = .current
+        for fmt in [
+            "yyyy-MM-dd'T'HH:mm:ss.SSS",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd"
+        ] {
+            local.dateFormat = fmt
+            if let d = local.date(from: s) { return d }
+        }
+        return nil
+    }
+
+    /// Pulls the first balanced `{...}` block out of a string. Lets prose/preamble
+    /// before/after the JSON object be ignored instead of failing the whole parse.
+    private static func extractFirstJSONObject(_ s: String) -> String? {
+        guard let start = s.firstIndex(of: "{") else { return nil }
+        var depth = 0
+        var inString = false
+        var escape = false
+        var i = start
+        while i < s.endIndex {
+            let c = s[i]
+            if escape { escape = false }
+            else if c == "\\" && inString { escape = true }
+            else if c == "\"" { inString.toggle() }
+            else if !inString {
+                if c == "{" { depth += 1 }
+                else if c == "}" {
+                    depth -= 1
+                    if depth == 0 { return String(s[start...i]) }
+                }
+            }
+            i = s.index(after: i)
+        }
+        return nil
     }
 
     private static func stripFences(_ s: String) -> String {

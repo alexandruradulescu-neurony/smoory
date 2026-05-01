@@ -23,13 +23,19 @@ enum CandidateAcceptor {
         switch stored.type {
         case .goal:
             let goal = Goal()
-            goal.title = body
+            // Goals get a short label, not a third-person sentence (the structuring
+            // prompt emits "title" alongside "content" for goal/project candidates;
+            // CandidateWrite.derivedTitle picks proposedTitle when set, else strips
+            // sentence prefixes from `body` as a fallback).
+            goal.title = stored.derivedTitle
+            goal.details = body
             context.insert(goal)
             stored.resultEntityID = goal.id
 
         case .project:
             let project = Project()
-            project.title = body
+            project.title = stored.derivedTitle
+            project.details = body
             context.insert(project)
             stored.resultEntityID = project.id
 
@@ -67,7 +73,7 @@ enum CandidateAcceptor {
                 expiresAt: stored.expiresAt,
                 supersededBy: nil,
                 provenanceJSON: makeProvenanceJSON(
-                    sourceKind: "structuring_layer",
+                    sourceKind: stored.sourceKind.isEmpty ? "structuring_layer" : stored.sourceKind,
                     candidate: stored
                 ),
                 vector: nil,
@@ -89,7 +95,7 @@ enum CandidateAcceptor {
                 expiresAt: nil,
                 supersededBy: nil,
                 provenanceJSON: makeProvenanceJSON(
-                    sourceKind: "structuring_layer",
+                    sourceKind: stored.sourceKind.isEmpty ? "structuring_layer" : stored.sourceKind,
                     candidate: stored
                 ),
                 vector: nil,
@@ -110,7 +116,7 @@ enum CandidateAcceptor {
                 expiresAt: stored.expiresAt,
                 supersededBy: nil,
                 provenanceJSON: makeProvenanceJSON(
-                    sourceKind: "structuring_layer",
+                    sourceKind: stored.sourceKind.isEmpty ? "structuring_layer" : stored.sourceKind,
                     candidate: stored
                 ),
                 vector: nil,

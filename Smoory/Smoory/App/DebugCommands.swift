@@ -165,20 +165,31 @@ struct DebugCommands: Commands {
             Divider()
 
             Button("Generate morning brief now") {
-                guard let dispatcher = morningBriefDispatcher,
-                      case .ready(let hema) = hemaState,
+                guard case .ready(let hema) = hemaState,
                       let svc = scheduledActionService
                 else {
-                    print("[debug] morning brief dispatcher not ready")
+                    print("[debug] hema or service not ready — cannot generate")
                     return
                 }
-                _ = hema  // silence unused warning; keeps the readiness gate explicit
-                _ = svc
                 Task { @MainActor in
-                    // Pull any firing brief; otherwise run a one-shot generation against
-                    // the same generator path the dispatcher uses.
-                    await dispatcher.dispatchAllFiring()
-                    print("[debug] morning brief dispatch complete")
+                    let generator = MorningBriefGenerator(
+                        modelContainer: modelContainer,
+                        hema: hema,
+                        calendarService: CalendarService(),
+                        appGroupWriter: AppGroupContainerWriter(),
+                        scheduledActionService: svc
+                    )
+                    do {
+                        let brief = try await generator.generate()
+                        print("[debug] generated morning brief")
+                        print("  headline: \(brief.headline)")
+                        print("  secondaryItems: \(brief.secondaryItems.count)")
+                        print("  calendar entries: \(brief.calendar.count)")
+                        print("  reflectiveNote: \(brief.reflectiveNote ?? "(none)")")
+                        print("  goalNudge: \(brief.goalNudge?.goalTitle ?? "(none)")")
+                    } catch {
+                        print("[debug] morning brief generation failed: \(error)")
+                    }
                 }
             }
 

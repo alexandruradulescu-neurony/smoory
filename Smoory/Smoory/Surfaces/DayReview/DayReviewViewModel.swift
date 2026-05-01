@@ -118,7 +118,7 @@ final class DayReviewViewModel {
             // Fire-and-forget structuring extraction so anything the user said during
             // the review surfaces as candidates in the Feed (just like main chat).
             Task { [chatSessionID, sourceID = userTurn.id] in
-                let recent = await self.recentTurnTexts()
+                let recent = self.recentTurnTexts()
                 await self.structuringService.extract(
                     userMessage: trimmed,
                     recentTurns: recent,
@@ -141,6 +141,13 @@ final class DayReviewViewModel {
     }
 
     func completeReview() async {
+        // Idempotent — completion can be triggered both by complete_day_review
+        // (tool) and by manual Done dismissal. Skip the second call so
+        // userResponseTimeSeconds doesn't drift if the user clicks Done after the
+        // tool already completed.
+        if let row = try? scheduledActionService.action(id: action.id), row.status == .completed {
+            return
+        }
         let elapsed = Date().timeIntervalSince(firedAt)
         _ = try? await scheduledActionService.markCompleted(
             actionID: action.id,

@@ -31,7 +31,7 @@ struct LargeWidgetView: View {
                     sectionDivider
                     section(title: "Today's calendar") {
                         VStack(alignment: .leading, spacing: 3) {
-                            ForEach(brief.calendar.prefix(5), id: \.startTime) { event in
+                            ForEach(Array(brief.calendar.prefix(5)), id: \.self) { event in
                                 calendarRow(event)
                             }
                         }

@@ -29,9 +29,11 @@ struct SettingsView: View {
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     @State private var dayReviewVM: DayReviewSettingsViewModel?
     @State private var morningBriefVM: MorningBriefSettingsViewModel?
+    @State private var weekReviewVM: WeekReviewSettingsViewModel?
 
     @Bindable private var failureCounter = StructuringFailureCounter.shared
     @Bindable private var briefFailureCounter = MorningBriefFailureCounter.shared
+    @Bindable private var patternFailureCounter = PatternAnalyzerFailureCounter.shared
 
     var body: some View {
         Form {
@@ -82,6 +84,10 @@ struct SettingsView: View {
 
             if let morningBriefVM {
                 morningBriefSection(viewModel: morningBriefVM)
+            }
+
+            if let weekReviewVM {
+                weekReviewSection(viewModel: weekReviewVM)
             }
 
             Section("Notifications") {
@@ -142,6 +148,14 @@ struct SettingsView: View {
                         .font(.smoory_caption)
                         .foregroundStyle(.tertiary)
                 }
+
+                HStack {
+                    Text("Pattern analyzer failures since launch")
+                    Spacer()
+                    Text("\(patternFailureCounter.count)")
+                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                }
             }
         }
         .formStyle(.grouped)
@@ -161,6 +175,35 @@ struct SettingsView: View {
                     modelContainer: modelContext.container,
                     service: scheduledActionService
                 )
+            }
+            if weekReviewVM == nil {
+                weekReviewVM = WeekReviewSettingsViewModel(
+                    modelContainer: modelContext.container,
+                    service: scheduledActionService
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func weekReviewSection(viewModel: WeekReviewSettingsViewModel) -> some View {
+        @Bindable var vm = viewModel
+        Section("Week review") {
+            Toggle("Enable weekly review", isOn: $vm.weekReviewEnabled)
+            if vm.weekReviewEnabled {
+                Picker("Day", selection: $vm.weekReviewDayOfWeek) {
+                    ForEach(1...7, id: \.self) { day in
+                        Text(WeekReviewSettingsViewModel.weekdayName(day)).tag(day)
+                    }
+                }
+                DatePicker(
+                    "Time",
+                    selection: $vm.weekReviewTime,
+                    displayedComponents: [.hourAndMinute]
+                )
+                Text("Smoory will check in once a week to reflect on patterns and progress.")
+                    .font(.smoory_caption)
+                    .foregroundStyle(.tertiary)
             }
         }
     }

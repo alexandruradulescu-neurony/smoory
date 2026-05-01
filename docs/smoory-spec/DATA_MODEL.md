@@ -416,6 +416,24 @@ A learned preference Smoory has proposed and the user has confirmed. Visible and
 
 ---
 
+## WeekReviewSummary
+
+(Added in milestone 3.6.) Per-fire artifact of the weekly pattern analysis. Persisted so the summary panel inside the week-review sheet can render without re-running the analyzer if the user closes and reopens, and so future "show me last week's review" surfaces have queryable history.
+
+**Fields:**
+- `id: UUID`
+- `weekStartedAt: Date` — analysis window start (now − 7 days at fire time)
+- `weekEndedAt: Date` — analysis window end (the fire time)
+- `generatedAt: Date` — when the analyzer ran
+- `actionID: UUID?` — links to the ScheduledAction that triggered this analysis
+- `statsJSON: String` — JSON-encoded `WeekStats` (totals + averages, computed from history pre-LLM)
+- `observationsJSON: String` — JSON-encoded `[PatternObservation]` (3-7 entries; LLM-generated)
+- `durableInsightsJSON: String` — JSON-encoded `[DurableInsight]` (0-3 entries; subset rephrased as durable facts about the user, surfaced as Feed candidates with `sourceKind = "week_review_pattern_analysis"`)
+
+`WeekStats`, `PatternObservation`, `DurableInsight` are Codable value types defined in `Pipeline/PatternAnalysis/PatternAnalysisTypes.swift`. WeekReviewSummary's computed accessors decode the JSON strings on demand.
+
+---
+
 ## CandidateWrite
 
 The structuring layer's queue of candidate writes pending user review. Produced by `StructuringService` after each chat turn (Haiku call), confirmed/rejected via the Feed surface, dispatched to target entities by `CandidateAcceptor`.
@@ -435,6 +453,7 @@ The structuring layer's queue of candidate writes pending user review. Produced 
 - `reviewedAt: Date?` — set when status moves out of `.pending`
 - `rejectionReason: String?` — captured at reject time (informs future negative training, not yet used)
 - `resultEntityID: UUID?` — the entity created on confirm (Goal, Todo, Person, ...) or written fact id
+- `sourceKind: String` — producer identity (added 3.6). Default `"structuring_layer"`. Set to `"week_review_pattern_analysis"` for candidates surfaced from `ScheduledActionPatternAnalyzer.durableInsights`. `CandidateAcceptor` threads this into the SemanticFact's `provenance_json["source_kind"]` on confirm.
 
 **Behavior notes:**
 - `status == .autoApplied` is reserved for future high-confidence-skip-review behavior; v1 always queues regardless of confidence.

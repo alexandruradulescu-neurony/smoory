@@ -24,6 +24,7 @@ enum StructuringPrompt {
     Output strict JSON. No prose, no fences, no commentary. Schema:
     {"candidates": [
       {"type": "<category>", "content": "<record-ready third-person statement>",
+       "title": "<short label, REQUIRED for goal/project; omit for other types>",
        "confidence": <0.0-1.0>, "expires_at": "<ISO date or null>",
        "user_phrase": "<the literal words from the user>"}
     ]}
@@ -32,12 +33,18 @@ enum StructuringPrompt {
     - If nothing is structurable, return {"candidates": []}.
     - Do NOT propose duplicates of existing records or anything already handled this turn.
     - "content" is a record-ready third-person statement, not a quote.
+    - "title" — REQUIRED for "goal" and "project". Short noun-phrase label (3-7 words),
+      Title-Cased, no trailing period. Examples: "Read 50 Pages a Day", "Learn Latin",
+      "Apollo Migration", "Half Marathon Training". DO NOT include time qualifiers
+      ("by Q4", "in the next month") or third-person framing ("User wants to ..."). Goal/
+      project entities use this as their displayed name; the "content" field becomes the
+      goal's longer description.
     - "user_phrase" is the literal words from the user.
 
     Examples:
 
     User message: "I want to read 50 pages a day"
-    Output: {"candidates": [{"type": "goal", "content": "User wants to read 50 pages per day", "confidence": 0.92, "expires_at": null, "user_phrase": "I want to read 50 pages a day"}]}
+    Output: {"candidates": [{"type": "goal", "content": "User wants to read 50 pages per day", "title": "Read 50 Pages a Day", "confidence": 0.92, "expires_at": null, "user_phrase": "I want to read 50 pages a day"}]}
 
     User message: "ok thanks"
     Output: {"candidates": []}
@@ -62,6 +69,28 @@ enum StructuringPrompt {
     struct AlreadyHandled: Sendable {
         let createdTodoTitles: [String]
         let writtenFactBodies: [String]
+        /// True when any `create_todo` tool fired in this turn — even if the LLM-supplied
+        /// title doesn't match the structuring candidate's content/phrase. Defends against
+        /// the dedup race where the assistant titles a todo "Call Maria" while the
+        /// structuring LLM emits content "User needs to call Maria tomorrow" — neither
+        /// string matches but they refer to the same intent.
+        let anyTodoToolFired: Bool
+        /// Symmetric guard for `write_memory_fact`. Drops all `.fact` candidates whose
+        /// content/phrase doesn't exactly match a written fact body — same race, lower
+        /// likelihood (fact bodies usually echo the user's words) but worth covering.
+        let anyFactToolFired: Bool
+
+        init(
+            createdTodoTitles: [String],
+            writtenFactBodies: [String],
+            anyTodoToolFired: Bool = false,
+            anyFactToolFired: Bool = false
+        ) {
+            self.createdTodoTitles = createdTodoTitles
+            self.writtenFactBodies = writtenFactBodies
+            self.anyTodoToolFired = anyTodoToolFired
+            self.anyFactToolFired = anyFactToolFired
+        }
     }
 
     static func assembleUserMessage(
@@ -136,6 +165,7 @@ enum StructuringPrompt {
 struct ParsedCandidate: Sendable {
     let type: CandidateType
     let content: String
+    let title: String              // short label; required for goal/project, empty otherwise
     let confidence: Double
     let expiresAt: Date?
     let userPhrase: String
@@ -161,6 +191,7 @@ struct ParsedCandidate: Sendable {
 
         self.type = type
         self.content = content
+        self.title = (dict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         self.confidence = confidence
         self.expiresAt = parsedExpiry
         self.userPhrase = (dict["user_phrase"] as? String) ?? ""

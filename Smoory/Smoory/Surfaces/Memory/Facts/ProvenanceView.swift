@@ -57,7 +57,7 @@ struct ProvenanceView: View {
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 if let kind = parsed.sourceKind {
-                    row("Source", value: kind)
+                    row("Source", value: humanLabel(for: kind))
                 }
                 if let extracted = parsed.extractedAt {
                     row("Extracted at", value: extracted.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
@@ -83,6 +83,15 @@ struct ProvenanceView: View {
                 row("Stored at", value: createdAt.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
             }
             .font(.caption)
+        }
+    }
+
+    private func humanLabel(for sourceKind: String) -> String {
+        switch sourceKind {
+        case "structuring_layer":             return "Structuring layer"
+        case "chat_assistant_call":           return "Chat (write_memory_fact)"
+        case "week_review_pattern_analysis":  return "Week review pattern analysis"
+        default:                              return sourceKind
         }
     }
 

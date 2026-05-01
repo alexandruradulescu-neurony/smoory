@@ -7,6 +7,7 @@ import UserNotifications
 final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     private weak var service: ScheduledActionService?
     private weak var pendingDayReview: PendingDayReviewState?
+    private weak var pendingWeekReview: PendingWeekReviewState?
     private weak var firedReminderQueue: FiredReminderQueue?
     private weak var navigationState: NavigationState?
     private weak var morningBriefDispatcher: MorningBriefDispatcher?
@@ -14,12 +15,14 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     func attach(
         service: ScheduledActionService,
         pendingDayReview: PendingDayReviewState,
+        pendingWeekReview: PendingWeekReviewState,
         firedReminderQueue: FiredReminderQueue,
         navigationState: NavigationState,
         morningBriefDispatcher: MorningBriefDispatcher
     ) {
         self.service = service
         self.pendingDayReview = pendingDayReview
+        self.pendingWeekReview = pendingWeekReview
         self.firedReminderQueue = firedReminderQueue
         self.navigationState = navigationState
         self.morningBriefDispatcher = morningBriefDispatcher
@@ -27,13 +30,15 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// Allow banner + sound while the app is foreground; otherwise macOS suppresses
-    /// the notification and the user never sees it.
+    /// the notification and the user never sees it. `.list` keeps the notification in
+    /// Notification Center after the banner dismisses, so a quick auto-dismiss doesn't
+    /// drop it entirely (user can still pick it up from NC).
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound])
+        completionHandler([.banner, .list, .sound])
     }
 
     nonisolated func userNotificationCenter(
@@ -43,16 +48,25 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     ) {
         let userInfo = response.notification.request.content.userInfo
         let actionID = (userInfo["actionID"] as? String).flatMap(UUID.init(uuidString:))
+        let intent = userInfo["intent"] as? String
         let identifier = response.actionIdentifier
         Task { @MainActor in
-            await self.handle(actionIdentifier: identifier, actionID: actionID)
+            await self.handle(actionIdentifier: identifier, actionID: actionID, intent: intent)
             completionHandler()
         }
     }
 
-    private func handle(actionIdentifier: String, actionID: UUID?) async {
+    private func handle(actionIdentifier: String, actionID: UUID?, intent: String?) async {
         guard let service else {
             print("[notif] no service attached; dropping response \(actionIdentifier)")
+            return
+        }
+        // Intent-based notifications carry no actionID — they fire post-completion (e.g.
+        // morning brief headline) and just need to focus a surface. Handle before the
+        // actionID guard so taps don't drop with "missing actionID userInfo".
+        if intent == "focusFeed" {
+            navigationState?.selectedSurface = .feed
+            print("[notif] focus-feed intent — focusing Feed")
             return
         }
         guard let actionID else {
@@ -100,8 +114,10 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     /// only .dayReview has a UI consumer (modal sheet); other kinds wait for their
     /// future consumer milestones.
     private func routeFiringActionToConsumer(id: UUID, service: ScheduledActionService) async {
-        let history = (try? service.actionsHistory(daysBack: 1)) ?? []
-        guard let row = history.first(where: { $0.id == id }) else {
+        // Fetch by id directly. The previous approach scanned actionsHistory(daysBack: 1),
+        // which both wasted a fetch and missed taps on notifications older than 24h
+        // still sitting in Notification Center.
+        guard let row = (try? service.action(id: id)) ?? nil else {
             print("[notif] couldn't find action \(id) for routing")
             return
         }
@@ -132,7 +148,15 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
                 Task { @MainActor in await dispatcher.dispatch(actionID: id) }
             }
 
-        case .weekReview, .goalNudge:
+        case .weekReview:
+            guard let pending = pendingWeekReview else {
+                print("[notif] weekReview tapped but PendingWeekReviewState not attached")
+                return
+            }
+            pending.actionToPresent = row
+            print("[notif] presenting week review for \(id)")
+
+        case .goalNudge:
             print("[notif] kind=\(row.kind) tapped — no consumer wired yet for this kind")
         }
     }

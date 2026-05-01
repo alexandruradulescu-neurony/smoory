@@ -94,7 +94,7 @@ final class MorningBriefGenerator {
         }
 
         MorningBriefFailureCounter.shared.increment()
-        await fireFailureNotification()
+        await fireFailureNotification(actionID: action?.id)
         throw MorningBriefError.generationFailed
     }
 
@@ -116,7 +116,12 @@ final class MorningBriefGenerator {
     }
 
     private func persist(_ brief: MorningBrief) throws {
-        appGroupWriter?.writeMorningBrief(brief)
+        // Belt-and-suspenders rate-limit enforcement (3.6 risk-3 mitigation): if the LLM
+        // returned a goalNudge but the matching Goal was nudged within the last 7 days,
+        // strip the nudge from the brief before persistence. The user never sees a
+        // rate-limit-violating nudge even if the LLM ignored the prompt rule.
+        let sanitizedBrief = stripIneligibleGoalNudge(brief)
+        appGroupWriter?.writeMorningBrief(sanitizedBrief)
 
         let context = ModelContext(modelContainer)
 
@@ -125,23 +130,80 @@ final class MorningBriefGenerator {
         markPreviousBriefsActedUpon(in: context, except: brief.id)
 
         let item = FeedItem()
-        item.id = brief.id
+        item.id = sanitizedBrief.id
         item.kind = .morningBrief
         item.priority = 100
-        item.headline = brief.headline
-        item.body = brief.reflectiveNote ?? ""
+        item.headline = sanitizedBrief.headline
+        item.body = sanitizedBrief.reflectiveNote ?? ""
         item.state = .active
-        item.createdAt = brief.generatedAt
-        item.updatedAt = brief.generatedAt
-        item.payloadJSON = encodeBriefJSON(brief)
+        item.createdAt = sanitizedBrief.generatedAt
+        item.updatedAt = sanitizedBrief.generatedAt
+        item.payloadJSON = encodeBriefJSON(sanitizedBrief)
         context.insert(item)
         try context.save()
 
-        Task { await fireHeadlineNotification(headline: brief.headline) }
+        // Update Goal.lastNudgedAt for the goal that was nudged (if any) so the next
+        // brief sees the rate-limit field populated. Logs and continues if the title
+        // doesn't match a real Goal — see 3.5 post-test feedback where the LLM put a
+        // fact body into goalTitle.
+        if let nudge = sanitizedBrief.goalNudge {
+            let title = nudge.goalTitle
+            let goalDescriptor = FetchDescriptor<Goal>(
+                predicate: #Predicate { $0.title == title }
+            )
+            if let goal = try? context.fetch(goalDescriptor).first {
+                goal.lastNudgedAt = sanitizedBrief.generatedAt
+                goal.updatedAt = sanitizedBrief.generatedAt
+                try? context.save()
+            } else {
+                print("[brief] goalNudge.goalTitle '\(title)' didn't match a Goal entity — rate-limit not updated")
+            }
+        }
+
+        Task { await fireHeadlineNotification(headline: sanitizedBrief.headline) }
 
         // Hint to WidgetKit so the desktop widget refreshes promptly rather than
         // waiting for its 15-minute timeline tick.
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// Belt-and-suspenders rate limit. If the LLM returned a goalNudge for a goal that
+    /// was nudged within the last 7 days, strip it from the brief before persistence.
+    /// Returns the brief unchanged if the nudge is eligible or absent.
+    private func stripIneligibleGoalNudge(_ brief: MorningBrief) -> MorningBrief {
+        guard let nudge = brief.goalNudge else { return brief }
+        let context = ModelContext(modelContainer)
+        let title = nudge.goalTitle
+        let descriptor = FetchDescriptor<Goal>(
+            predicate: #Predicate { $0.title == title }
+        )
+        guard let goal = try? context.fetch(descriptor).first else {
+            // Title doesn't match any Goal — strip it. The LLM is fabricating titles
+            // (3.5 post-test feedback). Don't show the user a goal that doesn't exist.
+            print("[brief] stripping goalNudge — title '\(title)' has no matching Goal entity")
+            return Self.briefWithoutNudge(brief)
+        }
+        guard let last = goal.lastNudgedAt else { return brief }
+        let elapsed = brief.generatedAt.timeIntervalSince(last)
+        let weekSeconds: TimeInterval = 7 * 24 * 3600
+        if elapsed < weekSeconds {
+            print("[brief] stripping goalNudge — '\(title)' was nudged \(Int(elapsed / 86_400))d ago (rate limit 7d)")
+            return Self.briefWithoutNudge(brief)
+        }
+        return brief
+    }
+
+    private static func briefWithoutNudge(_ brief: MorningBrief) -> MorningBrief {
+        MorningBrief(
+            id: brief.id,
+            generatedAt: brief.generatedAt,
+            forDate: brief.forDate,
+            headline: brief.headline,
+            secondaryItems: brief.secondaryItems,
+            calendar: brief.calendar,
+            reflectiveNote: brief.reflectiveNote,
+            goalNudge: nil
+        )
     }
 
     private func markPreviousBriefsActedUpon(in context: ModelContext, except keepID: UUID) {
@@ -149,9 +211,17 @@ final class MorningBriefGenerator {
         // fetch all and filter client-side. Brief volume is ~1/day so this is fine.
         let descriptor = FetchDescriptor<FeedItem>()
         let rows = (try? context.fetch(descriptor)) ?? []
+        var mutated = false
         for row in rows where row.kind == .morningBrief && row.state == .active && row.id != keepID {
             row.state = .actedUpon
             row.actedUponAt = Date()
+            mutated = true
+        }
+        // Save here rather than relying on persist's later context.save(). Keeping the
+        // write self-contained means the function doesn't go silently broken if the
+        // caller's save flow ever changes.
+        if mutated {
+            try? context.save()
         }
     }
 
@@ -172,7 +242,10 @@ final class MorningBriefGenerator {
         content.title = "Smoory"
         content.body = headline
         content.sound = .default
-        content.categoryIdentifier = ScheduledActionService.notificationCategoryID
+        // Headline fires post-completion. No actionID — instead a focus-feed intent so
+        // the delegate routes the tap to the Feed surface without re-dispatching.
+        content.userInfo = ["intent": "focusFeed"]
+        content.interruptionLevel = .timeSensitive
         let request = UNNotificationRequest(
             identifier: "morning-brief-fresh-\(UUID().uuidString)",
             content: content,
@@ -185,11 +258,17 @@ final class MorningBriefGenerator {
         }
     }
 
-    private func fireFailureNotification() async {
+    private func fireFailureNotification(actionID: UUID?) async {
         let content = UNMutableNotificationContent()
         content.title = "Smoory"
         content.body = "Brief generation failed — open Smoory to retry."
         content.sound = .default
+        if let actionID {
+            // Carry the actionID so a tap re-runs dispatch (single-flight collapses
+            // concurrent triggers; row stays .firing until dispatch succeeds).
+            content.userInfo = ["actionID": actionID.uuidString]
+        }
+        content.interruptionLevel = .timeSensitive
         let request = UNNotificationRequest(
             identifier: "morning-brief-failure-\(UUID().uuidString)",
             content: content,

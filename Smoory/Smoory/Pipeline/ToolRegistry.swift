@@ -18,6 +18,7 @@ enum ToolRegistry {
         SkipScheduledActionTool.self,
         CreateScheduledActionTool.self,
         GetMyScheduledActionsTool.self,
+        CompleteWeekReviewTool.self,
     ]
 
     static func tool(named name: String) -> (any Tool.Type)? {

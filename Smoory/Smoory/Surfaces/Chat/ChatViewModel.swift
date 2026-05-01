@@ -44,7 +44,7 @@ You have access to:
 - The user's active goals via get_active_goals
 - The user's open todos via get_open_todos
 - The user's memory of past conversations and learned facts via retrieve_memory
-- create_todo to propose adding a new todo (the user sees a confirmation card)
+- create_todo to propose adding a new todo (the user sees a confirmation card). If the user mentions a date or deadline ("by Friday", "tomorrow", "end of month"), pass it as `due_date` (ISO 8601). Don't drop the date silently.
 - complete_todo, update_todo, defer_todo, delete_todo to manage existing todos (each surfaces a confirmation card)
 - create_subtask to add a subtask under an existing parent todo
 - write_memory_fact to silently record high-confidence facts the user states (confidence >= 0.85)
@@ -53,7 +53,15 @@ You have access to:
 - create_scheduled_action to set a reminder. Use when the user asks to be reminded of something at a specific time ("remind me tomorrow at 2pm to call the dentist", "in 30 minutes tell me to take the laundry out"). Pass content + scheduled_for. Prefer ISO 8601 for scheduled_for; natural-language phrases ("tomorrow", "tonight", "this afternoon", "in N minutes/hours/days", "today/tomorrow at HH:MM[am|pm]", "30 minutes before my dentist") are also accepted. The user sees a confirmation card with the resolved time.
 - get_my_scheduled_actions to list the user's pending reminders. Use when the user asks "what reminders do I have?", "what's coming up?", or similar. Pass include_system=true only if they explicitly ask about system items (day reviews, etc.).
 
-Use create_todo ONLY when the user explicitly asks for a discrete action item — "add a todo", "remind me to X", "I need to call Y tomorrow". Do NOT infer todos from goals, aspirations, or general statements of intent ("I want to learn Italian" is a goal, not a todo). A separate structuring layer handles goals, projects, people, infrastructure, availability, and tone observations from your conversation; you should not duplicate its work.
+Use create_todo ONLY when the user explicitly asks for a persistent action item without a specific fire time — "add a todo to call the dentist", "I need to finish the deck", "put 'review pricing' on my list". Do NOT infer todos from goals, aspirations, or general statements of intent ("I want to learn Italian" is a goal, not a todo). A separate structuring layer handles goals, projects, people, infrastructure, availability, and tone observations from your conversation; you should not duplicate its work.
+
+CRITICAL — todo vs. reminder disambiguation:
+- "remind me at <time> to X" / "remind me <N> minutes before <event>" / "remind me tomorrow at 2pm" → create_scheduled_action ONLY. Do NOT also create_todo for the same intent.
+- "remind me to X" with NO time → create_todo (the user wants a list item, not a notification at a specific moment).
+- "I want to <do thing> on <day> at <time>, remind me <before>" → ONE create_scheduled_action with content describing the thing and scheduled_for resolved against the offset. Do NOT also fire create_todo for the underlying meeting/event — the reminder covers it.
+- When in doubt and the user gave a specific clock time, default to create_scheduled_action and skip create_todo.
+
+Fire at most ONE of {create_todo, create_scheduled_action} per intent. If both seem to fit, pick the one matching the user's primary phrasing — usually the verb they used.
 
 When the user references a todo by description ("the dentist one", "my high-priority Apollo todo"), call get_open_todos first to find the matching id, then call the action tool with that todo_id. Don't ask the user for the UUID. Subtasks are nested inside their parent in the get_open_todos response — use them when the user references a subtask.
 
@@ -386,16 +394,26 @@ When you sense the user has covered the basics, or the user signals they're done
         recentTurns: [String],
         toolExchanges: [ToolExchange]
     ) async {
-        let createdTodos: [String] = toolExchanges
-            .filter { $0.toolName == "create_todo" }
+        // Only count successful exchanges so cancelling a confirmation card doesn't also
+        // suppress the structuring layer's candidate — the candidate is the safety net.
+        let successfulTodoExchanges = toolExchanges.filter {
+            $0.toolName == "create_todo" && !$0.result.isError
+        }
+        let successfulFactExchanges = toolExchanges.filter {
+            $0.toolName == "write_memory_fact" && !$0.result.isError
+        }
+        let createdTodos: [String] = successfulTodoExchanges
             .compactMap { Self.extractStringField("title", fromJSON: $0.parametersJSON) }
-        let writtenFacts: [String] = toolExchanges
-            .filter { $0.toolName == "write_memory_fact" }
+        let writtenFacts: [String] = successfulFactExchanges
             .compactMap { Self.extractStringField("body", fromJSON: $0.parametersJSON) }
+        let anyTodoToolFired = !successfulTodoExchanges.isEmpty
+        let anyFactToolFired = !successfulFactExchanges.isEmpty
 
         let alreadyHandled = StructuringPrompt.AlreadyHandled(
             createdTodoTitles: createdTodos,
-            writtenFactBodies: writtenFacts
+            writtenFactBodies: writtenFacts,
+            anyTodoToolFired: anyTodoToolFired,
+            anyFactToolFired: anyFactToolFired
         )
 
         await structuringService.extract(

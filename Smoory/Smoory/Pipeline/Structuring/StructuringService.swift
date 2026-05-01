@@ -65,9 +65,18 @@ final class StructuringService {
             let normPhrase = Self.normalize(p.userPhrase)
             switch p.type {
             case .todo:
+                // Hard suppression when create_todo fired this turn — the title-based
+                // dedup misses cases where the assistant titles a todo "Call Maria"
+                // while structuring extracts "User needs to call Maria tomorrow". Both
+                // refer to the same intent; let the tool be the source of truth.
+                if alreadyHandled.anyTodoToolFired { return false }
                 return !handledTodos.contains(normContent)
                     && !handledTodos.contains(normPhrase)
             case .fact:
+                // Symmetric guard: write_memory_fact is silent (no confirmation card),
+                // so any successful fire means the fact already landed in hema. Drop
+                // fact candidates wholesale to avoid the same dedup race as todos.
+                if alreadyHandled.anyFactToolFired { return false }
                 return !handledFacts.contains(normContent)
                     && !handledFacts.contains(normPhrase)
             default:
@@ -119,6 +128,7 @@ final class StructuringService {
             let row = CandidateWrite()
             row.type = p.type
             row.content = p.content
+            row.proposedTitle = p.title
             row.confidence = p.confidence
             row.userPhrase = p.userPhrase
             row.expiresAt = p.expiresAt

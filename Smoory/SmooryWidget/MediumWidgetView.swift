@@ -38,7 +38,7 @@ struct MediumWidgetView: View {
                             .lineLimit(1)
                     }
                 }
-                ForEach(brief.calendar.prefix(2), id: \.startTime) { event in
+                ForEach(Array(brief.calendar.prefix(2)), id: \.self) { event in
                     HStack(spacing: 6) {
                         Text(event.isAllDay
                              ? "All day"

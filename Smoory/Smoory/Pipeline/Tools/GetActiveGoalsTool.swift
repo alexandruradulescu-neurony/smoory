@@ -32,6 +32,7 @@ enum GetActiveGoalsTool: Tool {
         let goalType: String
         let targetDate: String?
         let role: String?
+        let lastNudgedAt: String?
     }
 
     static func execute(
@@ -59,7 +60,8 @@ enum GetActiveGoalsTool: Tool {
                 status: Self.statusName(goal.status),
                 goalType: Self.goalTypeName(goal.goalType),
                 targetDate: goal.targetDate?.formatted(.iso8601),
-                role: goal.role?.slug
+                role: goal.role?.slug,
+                lastNudgedAt: goal.lastNudgedAt?.formatted(.iso8601)
             )
         }
 

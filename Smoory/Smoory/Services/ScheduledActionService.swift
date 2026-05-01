@@ -197,11 +197,25 @@ final class ScheduledActionService {
     func actionsHistory(daysBack: Int = 7) throws -> [ScheduledAction] {
         let context = ModelContext(modelContainer)
         let cutoff = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date()) ?? Date()
+        // Filter by scheduledFor, not createdAt. Recurring rows are recreated per
+        // occurrence (regenerateNextOccurrence) so scheduledFor reflects the actual
+        // event date for each row. createdAt could be months in the past for a long-
+        // running recurring schedule, masking recently-fired rows from the analyzer.
         let descriptor = FetchDescriptor<ScheduledAction>(
-            predicate: #Predicate { $0.createdAt >= cutoff },
+            predicate: #Predicate { $0.scheduledFor >= cutoff },
             sortBy: [SortDescriptor(\.scheduledFor, order: .forward)]
         )
         return try context.fetch(descriptor)
+    }
+
+    /// Direct fetch by row id. Used by notification routing where the action id is
+    /// already known and a history scan is wasteful.
+    func action(id: UUID) throws -> ScheduledAction? {
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<ScheduledAction>(
+            predicate: #Predicate { $0.id == id }
+        )
+        return try context.fetch(descriptor).first
     }
 
     func nextScheduledAction() throws -> ScheduledAction? {
@@ -336,6 +350,10 @@ final class ScheduledActionService {
         content.sound = .default
         content.categoryIdentifier = Self.notificationCategoryID
         content.userInfo = ["actionID": action.id.uuidString]
+        // Time-sensitive breaks through Focus and biases macOS toward Alert-style
+        // presentation. The user must still pick "Alerts" in System Settings →
+        // Notifications → Smoory for banners to stay on screen until dismissed.
+        content.interruptionLevel = .timeSensitive
 
         let comps = Calendar.current.dateComponents(
             [.year, .month, .day, .hour, .minute, .second],

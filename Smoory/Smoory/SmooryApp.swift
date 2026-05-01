@@ -22,6 +22,7 @@ struct SmooryApp: App {
     @State private var pollingTimer: Timer?
     @State private var notificationDelegate = NotificationDelegate()
     @State private var pendingDayReview = PendingDayReviewState()
+    @State private var pendingWeekReview = PendingWeekReviewState()
     @State private var firedReminderQueue = FiredReminderQueue()
     @State private var navigationState = NavigationState()
     @State private var morningBriefDispatcher: MorningBriefDispatcher?
@@ -53,6 +54,7 @@ struct SmooryApp: App {
             RuleAdjustment.self,
             CandidateWrite.self,
             ScheduledAction.self,
+            WeekReviewSummary.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -74,24 +76,15 @@ struct SmooryApp: App {
                     .environment(\.scheduledActionService, scheduledActionService)
                     .environment(\.navigationState, navigationState)
                     .sheet(isPresented: Binding(
-                        get: { pendingDayReview.actionToPresent != nil },
+                        get: { pendingDayReview.actionToPresent != nil || pendingWeekReview.actionToPresent != nil },
                         set: { newValue in
-                            if !newValue { pendingDayReview.actionToPresent = nil }
+                            if !newValue {
+                                pendingDayReview.actionToPresent = nil
+                                pendingWeekReview.actionToPresent = nil
+                            }
                         }
                     )) {
-                        if let action = pendingDayReview.actionToPresent,
-                           case .ready(let hema) = hemaState,
-                           let svc = scheduledActionService {
-                            DayReviewSheet(
-                                viewModel: DayReviewViewModel(
-                                    action: action,
-                                    modelContainer: sharedModelContainer,
-                                    hema: hema,
-                                    scheduledActionService: svc
-                                ),
-                                dismiss: { pendingDayReview.actionToPresent = nil }
-                            )
-                        }
+                        reviewSheetContent
                     }
                     .task {
                         initializeScheduledActionsIfNeeded()
@@ -154,6 +147,7 @@ struct SmooryApp: App {
                 notificationDelegate.attach(
                     service: svc,
                     pendingDayReview: pendingDayReview,
+                    pendingWeekReview: pendingWeekReview,
                     firedReminderQueue: firedReminderQueue,
                     navigationState: navigationState,
                     morningBriefDispatcher: dispatcher
@@ -199,6 +193,38 @@ struct SmooryApp: App {
             print("[notif] permission \(granted ? "granted" : "denied")")
         } catch {
             print("[notif] permission request failed: \(error)")
+        }
+    }
+
+    /// Branches between day and week review sheets based on which pending state has a
+    /// value. Day takes precedence if both somehow set (shouldn't happen — different
+    /// fire schedules — but the binding sequence handles it cleanly).
+    @ViewBuilder
+    private var reviewSheetContent: some View {
+        if let dayAction = pendingDayReview.actionToPresent,
+           case .ready(let hema) = hemaState,
+           let svc = scheduledActionService {
+            DayReviewSheet(
+                viewModel: DayReviewViewModel(
+                    action: dayAction,
+                    modelContainer: sharedModelContainer,
+                    hema: hema,
+                    scheduledActionService: svc
+                ),
+                dismiss: { pendingDayReview.actionToPresent = nil }
+            )
+        } else if let weekAction = pendingWeekReview.actionToPresent,
+                  case .ready(let hema) = hemaState,
+                  let svc = scheduledActionService {
+            WeekReviewSheet(
+                viewModel: WeekReviewViewModel(
+                    action: weekAction,
+                    modelContainer: sharedModelContainer,
+                    hema: hema,
+                    scheduledActionService: svc
+                ),
+                dismiss: { pendingWeekReview.actionToPresent = nil }
+            )
         }
     }
 

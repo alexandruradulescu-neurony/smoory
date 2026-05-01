@@ -45,7 +45,7 @@ struct MorningBriefFeedRow: View {
             if !brief.calendar.isEmpty {
                 section(title: "Today's calendar") {
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(brief.calendar, id: \.startTime) { event in
+                        ForEach(brief.calendar, id: \.self) { event in
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Text(event.isAllDay ? "All day" : timeRange(event))
                                     .font(.smoory_caption.monospacedDigit())
