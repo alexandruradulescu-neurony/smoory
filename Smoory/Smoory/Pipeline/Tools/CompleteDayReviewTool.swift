@@ -37,11 +37,35 @@ enum CompleteDayReviewTool: Tool {
         )
         try? await context.services.hema.writeTurn(summaryTurn)
 
+        // 4.4 — batched fact extraction piggyback. Run AFTER the summary turn
+        // is persisted so today's reflection becomes part of the extraction
+        // window. Salience-gated; if the day's turns don't contain anything
+        // memory-worthy, the extractor skips silently.
+        if let extractor = context.services.batchedFactExtractor {
+            await Self.runDayReviewExtraction(extractor: extractor, hema: context.services.hema)
+        }
+
         return ToolOutput(
             toolUseId: context.toolUseId,
             content: #"{"status":"complete_day_review_signaled"}"#,
             isError: false
         )
+    }
+
+    /// Pulls today's memory_turns from hema (all chat sessions, not just the
+    /// review's own session — the user's main-chat turns from earlier today
+    /// are valuable extraction input alongside the review reflection) and
+    /// hands them to the batched extractor.
+    private static func runDayReviewExtraction(
+        extractor: BatchedFactExtractor,
+        hema: HemaService
+    ) async {
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+        let turns = (try? await hema.readAllTurns(limit: 500, since: startOfToday)) ?? []
+        // readAllTurns returns DESC; extractor wants chronological for
+        // arc-sensitive prose generation.
+        let chronological = Array(turns.reversed())
+        await extractor.extract(turns: chronological, trigger: .dayReviewPiggyback)
     }
 
     private static func decodeInput(_ jsonString: String) throws -> Input {

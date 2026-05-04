@@ -35,6 +35,18 @@ final class ChatViewModel {
     private let services: ToolServices
     private let structuringService: StructuringService
     private var pendingContinuations: [String: CheckedContinuation<ToolOutput, Never>] = [:]
+    /// 4.4 — batched fact extractor wired in from app level. Used by the idle
+    /// timer below. Optional so non-app callers (tests, previews) can construct
+    /// a ChatViewModel without wiring extraction.
+    private let batchedFactExtractor: BatchedFactExtractor?
+    /// 4.4 — high-water mark used to avoid re-extracting the same chat turns.
+    /// In-memory only; app restart resets it (per milestone-4.4 design choice).
+    /// On restart, the app-launch trigger pulls the last 24h of turns through
+    /// the salience gate so any turns before quit get a chance.
+    private var lastExtractionAt: Date?
+    /// 4.4 — fires idle-pause extraction after 15 min of chat silence. Reset
+    /// on every successful send() completion.
+    private var idleTimer: Timer?
 
     private let systemPrompt = """
 You are Smoory, a personal AI assistant for the user. You're running on the user's Mac.
@@ -197,11 +209,13 @@ When you sense the user has covered the basics, or the user signals they're done
         chatSessionID: UUID,
         client: LLMClient = RoutingLLMClient(),
         calendarService: CalendarService? = nil,
-        scheduledActionService: ScheduledActionService? = nil
+        scheduledActionService: ScheduledActionService? = nil,
+        batchedFactExtractor: BatchedFactExtractor? = nil
     ) {
         self.modelContainer = modelContainer
         self.hema = hema
         self.chatSessionID = chatSessionID
+        self.batchedFactExtractor = batchedFactExtractor
         // CalendarService is @MainActor — construct inside this @MainActor init so the
         // default-arg evaluation doesn't cross actor boundaries.
         let resolvedCalendar = calendarService ?? CalendarService()
@@ -209,7 +223,8 @@ When you sense the user has covered the basics, or the user signals they're done
             calendarService: resolvedCalendar,
             modelContainer: modelContainer,
             hema: hema,
-            scheduledActionService: scheduledActionService
+            scheduledActionService: scheduledActionService,
+            batchedFactExtractor: batchedFactExtractor
         )
         self.services = services
         self.orchestrator = Orchestrator(
@@ -304,6 +319,11 @@ When you sense the user has covered the basics, or the user signals they're done
                             toolExchanges: exchangesSnapshot
                         )
                     }
+                    // 4.4 — reset the 15-min idle timer on successful turn
+                    // completion. If the timer fires before the next turn, run
+                    // batched fact extraction over hema turns since the last
+                    // extraction marker.
+                    resetIdleTimer()
                 }
             case .clientError(let error):
                 removePlaceholder(id: assistantTurnID)
@@ -520,6 +540,37 @@ When you sense the user has covered the basics, or the user signals they're done
             sourceTurnID: nil,
             alreadyHandled: alreadyHandled
         )
+    }
+
+    // MARK: - Idle-pause batched extraction (4.4)
+
+    /// Schedules a one-shot 15-min idle timer. If it fires (i.e., no further
+    /// chat turns in the next 15 minutes), runs batched fact extraction over
+    /// hema turns recorded since the last extraction marker. Cancelled and
+    /// rescheduled on every successful send().
+    private func resetIdleTimer() {
+        idleTimer?.invalidate()
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.fireIdleExtraction()
+            }
+        }
+    }
+
+    private func fireIdleExtraction() async {
+        guard let extractor = batchedFactExtractor else { return }
+        // Pull turns from hema since the last extraction marker. First-time
+        // fall back is "since one hour ago" so the salience gate has a window
+        // to reason over.
+        let since = lastExtractionAt ?? Date().addingTimeInterval(-3600)
+        let turns = (try? await hema.readAllTurns(limit: 500, since: since)) ?? []
+        // readAllTurns returns DESC; extractor wants chronological for arc
+        // sensitivity in the salience and extraction prompts.
+        let chronological = Array(turns.reversed())
+        await extractor.extract(turns: chronological, trigger: .idlePause)
+        // Update marker regardless of salience verdict — we do not want to
+        // re-process the same window on the next idle fire.
+        lastExtractionAt = Date()
     }
 
     private static func recentTurnTexts(turns: [Turn], excluding excludedIDs: [UUID]) -> [String] {

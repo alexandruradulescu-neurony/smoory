@@ -116,7 +116,9 @@ Previous response was malformed or out of length bounds. Output ONLY the prose s
     struct TodayInputs: Sendable {
         let now: Date
         let calendarEvents: [CalendarEvent]
-        let completedTodosToday: [Todo]
+        /// Stored as titles only (not [Todo]) because Todo is a SwiftData @Model
+        /// class and not Sendable; the prompt only needs the title string anyway.
+        let completedTodosTodayTitles: [String]
         let memoryTurns: [MemoryTurn]    // chronological order, oldest first
         let previousTodayBody: String?
     }
@@ -156,10 +158,10 @@ Previous response was malformed or out of length bounds. Output ONLY the prose s
             lines.append("")
         }
 
-        if !inputs.completedTodosToday.isEmpty {
+        if !inputs.completedTodosTodayTitles.isEmpty {
             lines.append("# Todos completed today")
-            for todo in inputs.completedTodosToday {
-                lines.append("- \(todo.title)")
+            for title in inputs.completedTodosTodayTitles {
+                lines.append("- \(title)")
             }
             lines.append("")
         }

@@ -28,7 +28,8 @@ final class DayReviewViewModel {
         hema: HemaService,
         scheduledActionService: ScheduledActionService,
         client: LLMClient = RoutingLLMClient(),
-        calendarService: CalendarService? = nil
+        calendarService: CalendarService? = nil,
+        batchedFactExtractor: BatchedFactExtractor? = nil
     ) {
         self.action = action
         self.hema = hema
@@ -39,7 +40,8 @@ final class DayReviewViewModel {
             calendarService: resolvedCalendar,
             modelContainer: modelContainer,
             hema: hema,
-            scheduledActionService: scheduledActionService
+            scheduledActionService: scheduledActionService,
+            batchedFactExtractor: batchedFactExtractor
         )
         // Fresh Orchestrator instance with this review's chatSessionID — Orchestrator
         // captures session ID at init, so isolation requires a new instance.

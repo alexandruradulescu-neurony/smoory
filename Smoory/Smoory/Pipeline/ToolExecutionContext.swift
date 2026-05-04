@@ -21,16 +21,23 @@ struct ToolServices: Sendable {
     /// Optional because chat construction precedes ScheduledActionService bring-up in some
     /// startup orderings; tools that need it must guard before use.
     let scheduledActionService: ScheduledActionService?
+    /// Optional batched fact extractor (4.4). CompleteDayReviewTool uses it to
+    /// pre-extract facts from the day's chat turns before the day-review
+    /// summary turn is persisted. Optional because some startup paths
+    /// construct ToolServices before hema is fully ready.
+    let batchedFactExtractor: BatchedFactExtractor?
 
     init(
         calendarService: CalendarService,
         modelContainer: ModelContainer,
         hema: HemaService,
-        scheduledActionService: ScheduledActionService? = nil
+        scheduledActionService: ScheduledActionService? = nil,
+        batchedFactExtractor: BatchedFactExtractor? = nil
     ) {
         self.calendarService = calendarService
         self.modelContainer = modelContainer
         self.hema = hema
         self.scheduledActionService = scheduledActionService
+        self.batchedFactExtractor = batchedFactExtractor
     }
 }

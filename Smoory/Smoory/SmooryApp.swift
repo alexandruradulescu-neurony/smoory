@@ -36,6 +36,15 @@ struct SmooryApp: App {
     /// WeekReviewViewModel (for .recent + counter-gated .overall regeneration on review
     /// completion). Debug commands also call its three generate* methods directly.
     @State private var compactMemoryGenerator: CompactMemoryGenerator?
+    /// App-level batched fact extractor (4.4). Single instance shared by
+    /// ChatViewModel (idle pause + app-launch gap), the scenePhase observer
+    /// (background fire), and CompleteDayReviewTool (day-review piggyback).
+    /// Single-flight is enforced inside the extractor itself.
+    @State private var batchedFactExtractor: BatchedFactExtractor?
+    /// Timestamp of the last scenePhase → background transition. Used to gate
+    /// the 5-min background-fire trigger so Cmd-Tab task switches don't fire
+    /// extraction every time.
+    @State private var lastBackgroundedAt: Date?
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -107,6 +116,21 @@ struct SmooryApp: App {
                     .onChange(of: scenePhase) { _, newPhase in
                         if newPhase == .active {
                             Task { @MainActor in await refreshStaleReminders() }
+                            // 4.4 — if app is returning from a 5+ min background,
+                            // fire batched extraction over recent turns so a queued
+                            // batch isn't lost when the user steps away.
+                            if let backgroundedAt = lastBackgroundedAt,
+                               Date().timeIntervalSince(backgroundedAt) >= 300 {
+                                fireBackgroundExtraction()
+                            }
+                            lastBackgroundedAt = nil
+                        } else if newPhase == .background || newPhase == .inactive {
+                            // Track background entry; the active-resume branch checks
+                            // elapsed time before firing extraction so quick task
+                            // switches (Cmd-Tab) don't burn a salience call.
+                            if lastBackgroundedAt == nil {
+                                lastBackgroundedAt = Date()
+                            }
                         }
                     }
 
@@ -121,7 +145,8 @@ struct SmooryApp: App {
                 modelContainer: sharedModelContainer,
                 scheduledActionService: scheduledActionService,
                 morningBriefDispatcher: morningBriefDispatcher,
-                compactMemoryGenerator: compactMemoryGenerator
+                compactMemoryGenerator: compactMemoryGenerator,
+                batchedFactExtractor: batchedFactExtractor
             )
         }
     }
@@ -132,13 +157,34 @@ struct SmooryApp: App {
         do {
             let hema = try await HemaService(embedder: VoyageEmbedder())
             hemaState = .ready(hema)
+
+            // Batched fact extractor (4.4) — single app-level instance.
+            // Construct BEFORE ChatViewModel because the chat needs it for
+            // its idle-pause hook. scenePhase observer captures it for
+            // background-fire; CompleteDayReviewTool gets it via ToolServices.
+            let extractor = BatchedFactExtractor(
+                hema: hema,
+                modelContainer: sharedModelContainer
+            )
+            batchedFactExtractor = extractor
+            // App-launch gap-extraction: pull the last 24h of memory turns
+            // and let the salience gate decide. Detached so it doesn't slow
+            // first-run UI.
+            Task.detached { @MainActor in
+                let dayAgo = Date().addingTimeInterval(-86_400)
+                let turns = (try? await hema.readAllTurns(limit: 500, since: dayAgo)) ?? []
+                let chronological = Array(turns.reversed())
+                await extractor.extract(turns: chronological, trigger: .appLaunchGap)
+            }
+
             // Construct ChatViewModel once hema is ready; it lives at App level so chat
             // history persists across sidebar navigation.
             chatViewModel = ChatViewModel(
                 modelContainer: sharedModelContainer,
                 hema: hema,
                 chatSessionID: chatSessionID,
-                scheduledActionService: scheduledActionService
+                scheduledActionService: scheduledActionService,
+                batchedFactExtractor: extractor
             )
             // Compact memory generator (4.2) — single instance shared by the
             // morning brief route (.today side-write) and the week review hook
@@ -232,7 +278,8 @@ struct SmooryApp: App {
                     action: dayAction,
                     modelContainer: sharedModelContainer,
                     hema: hema,
-                    scheduledActionService: svc
+                    scheduledActionService: svc,
+                    batchedFactExtractor: batchedFactExtractor
                 ),
                 dismiss: { pendingDayReview.actionToPresent = nil }
             )
@@ -310,6 +357,22 @@ struct SmooryApp: App {
                 await dispatchFiringMorningBriefs()
                 await calendarService.refreshAndWriteSnapshot()
             }
+        }
+    }
+
+    /// 4.4 — fires batched fact extraction over the last 24 hours of memory
+    /// turns when scenePhase resumes after a 5+ min background. Single-flight
+    /// is enforced inside the extractor; concurrent triggers (idle + scenePhase
+    /// + day-review piggyback firing close together) collapse to one pass.
+    @MainActor
+    private func fireBackgroundExtraction() {
+        guard let extractor = batchedFactExtractor,
+              case .ready(let hema) = hemaState else { return }
+        Task.detached { @MainActor in
+            let dayAgo = Date().addingTimeInterval(-86_400)
+            let turns = (try? await hema.readAllTurns(limit: 500, since: dayAgo)) ?? []
+            let chronological = Array(turns.reversed())
+            await extractor.extract(turns: chronological, trigger: .scenePhaseBackground)
         }
     }
 

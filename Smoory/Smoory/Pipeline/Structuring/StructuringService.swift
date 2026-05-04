@@ -73,12 +73,11 @@ final class StructuringService {
                 return !handledTodos.contains(normContent)
                     && !handledTodos.contains(normPhrase)
             case .fact:
-                // Symmetric guard: write_memory_fact is silent (no confirmation card),
-                // so any successful fire means the fact already landed in hema. Drop
-                // fact candidates wholesale to avoid the same dedup race as todos.
-                if alreadyHandled.anyFactToolFired { return false }
-                return !handledFacts.contains(normContent)
-                    && !handledFacts.contains(normPhrase)
+                // 4.4: per-turn structuring no longer emits .fact candidates;
+                // batched extraction owns that path. Defensive filter — if the
+                // LLM ignores the prompt instruction and emits one anyway, drop
+                // it client-side rather than spam Feed with premature commits.
+                return false
             default:
                 return true
             }

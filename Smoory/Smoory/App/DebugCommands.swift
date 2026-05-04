@@ -8,6 +8,7 @@ struct DebugCommands: Commands {
     let scheduledActionService: ScheduledActionService?
     let morningBriefDispatcher: MorningBriefDispatcher?
     let compactMemoryGenerator: CompactMemoryGenerator?
+    let batchedFactExtractor: BatchedFactExtractor?
 
     var body: some Commands {
         CommandMenu("Debug") {
@@ -211,6 +212,21 @@ struct DebugCommands: Commands {
             }
 
             Divider()
+
+            Button("Run batched fact extraction (last 24h)") {
+                guard let extractor = batchedFactExtractor,
+                      case .ready(let hema) = hemaState else {
+                    print("[batched] not ready — extractor or hema unavailable.")
+                    return
+                }
+                Task {
+                    let dayAgo = Date().addingTimeInterval(-86_400)
+                    let turns = (try? await hema.readAllTurns(limit: 500, since: dayAgo)) ?? []
+                    let chronological = Array(turns.reversed())
+                    print("[batched] manual trigger: \(chronological.count) turn(s) in window")
+                    await extractor.extract(turns: chronological, trigger: .manualDebug)
+                }
+            }
 
             Button("Regenerate .today compact memory") {
                 guard let generator = compactMemoryGenerator else {

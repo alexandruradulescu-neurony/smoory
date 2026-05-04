@@ -36,6 +36,8 @@ struct SettingsView: View {
     @Bindable private var patternFailureCounter = PatternAnalyzerFailureCounter.shared
     @Bindable private var compactMemoryFailureCounter = CompactMemoryFailureCounter.shared
     @Bindable private var contradictionDetectionFailureCounter = ContradictionDetectionFailureCounter.shared
+    @Bindable private var batchedExtractionFailureCounter = BatchedExtractionFailureCounter.shared
+    @Bindable private var batchedExtractionSkippedCounter = BatchedExtractionSkippedCounter.shared
 
     var body: some View {
         Form {
@@ -181,6 +183,32 @@ struct SettingsView: View {
                 }
                 if contradictionDetectionFailureCounter.count > 0 {
                     Text("Failures cover LLM errors, parse failures, and timeouts during contradiction detection. The fact still lands when detection fails — only the supersession candidate doesn't appear.")
+                        .font(.smoory_caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                HStack {
+                    Text("Batched extraction failures since launch")
+                    Spacer()
+                    Text("\(batchedExtractionFailureCounter.count)")
+                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                }
+                if batchedExtractionFailureCounter.count > 0 {
+                    Text("Failures cover salience LLM errors, extraction LLM errors, and parse failures in the batched fact extractor. The chat continues normally; only Feed candidates don't appear for that window.")
+                        .font(.smoory_caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                HStack {
+                    Text("Batched extraction skipped (no salience)")
+                    Spacer()
+                    Text("\(batchedExtractionSkippedCounter.count)")
+                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                }
+                if batchedExtractionSkippedCounter.count > 0 {
+                    Text("Windows the salience gate decided weren't memory-worthy. High counts may indicate the gate is too strict; very low counts may indicate it's too lenient.")
                         .font(.smoory_caption)
                         .foregroundStyle(.tertiary)
                 }

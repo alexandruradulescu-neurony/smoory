@@ -246,7 +246,7 @@ final class CompactMemoryGenerator {
         return CompactMemoryPrompts.TodayInputs(
             now: now,
             calendarEvents: events,
-            completedTodosToday: completedToday,
+            completedTodosTodayTitles: completedToday.map { $0.title },
             memoryTurns: turns,
             previousTodayBody: previousTodayBody
         )

@@ -18,8 +18,8 @@ enum StructuringPrompt {
     - "infrastructure": a service/tool/account. "My business email is on Fastmail".
     - "availability": time-bounded user availability. "I'll be off Tuesday"; "I have a deep block tomorrow".
     - "tone_observation": preferences about communication. "I like terse replies".
-    - "fact": any other durable semantic fact about the user. "I have two kids"; "I'm vegetarian"; \
-    "I live in Bucharest"; "I'm preparing for a half-marathon".
+
+    Do NOT emit "fact" candidates. Durable semantic facts about the user are extracted by a separate batched pass triggered at idle pauses, day-review time, and app backgrounding. Per-turn extraction commits half-formed ideas; the batched pass sees the full arc.
 
     Output strict JSON. No prose, no fences, no commentary. Schema:
     {"candidates": [
