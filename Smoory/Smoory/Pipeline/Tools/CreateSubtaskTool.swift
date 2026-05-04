@@ -113,6 +113,7 @@ enum CreateSubtaskTool: Tool {
         subtask.source = source
         context.insert(subtask)
         try context.save()
+        Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
         return subtask
     }
 

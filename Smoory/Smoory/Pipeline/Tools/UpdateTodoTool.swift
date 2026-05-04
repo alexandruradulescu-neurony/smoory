@@ -100,11 +100,14 @@ enum UpdateTodoTool: Tool {
         }
         todo.updatedAt = Date()
         try context.save()
+        Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
         return todo
     }
 
     /// Surface path: caller hands typed values for everything; we set them all and save.
-    /// Used by the detail view's Save button.
+    /// Used by the detail view's Save button. Takes `modelContainer` so the
+    /// post-save snapshot write can reach the App Group writer; the existing
+    /// `context` argument is kept for backwards compatibility.
     @discardableResult
     static func saveChanges(
         to todo: Todo,
@@ -113,7 +116,8 @@ enum UpdateTodoTool: Tool {
         dueDate: Date?,
         priority: TodoPriority,
         role: Role?,
-        in context: ModelContext
+        in context: ModelContext,
+        modelContainer: ModelContainer
     ) throws -> Todo {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { throw TodoToolError.missingTitle }
@@ -124,6 +128,7 @@ enum UpdateTodoTool: Tool {
         todo.role = role
         todo.updatedAt = Date()
         try context.save()
+        Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
         return todo
     }
 

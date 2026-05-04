@@ -6,12 +6,16 @@ struct BriefEntry: TimelineEntry {
     let brief: WidgetMorningBrief?
     let briefStaleness: BriefStaleness
     let upcomingActions: [WidgetScheduledAction]
+    let calendar: WidgetCalendarSnapshot?
+    let todos: WidgetTodosSnapshot?
 
     static let placeholder = BriefEntry(
         date: Date(),
         brief: WidgetMorningBrief.preview,
         briefStaleness: .today,
-        upcomingActions: []
+        upcomingActions: [],
+        calendar: nil,
+        todos: nil
     )
 }
 

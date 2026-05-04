@@ -249,7 +249,8 @@ struct TodoDetailView: View {
                 dueDate: hasDueDate ? dueDate : nil,
                 priority: priority,
                 role: resolvedRole,
-                in: modelContext
+                in: modelContext,
+                modelContainer: modelContext.container
             )
         } catch {
             print("[detail] save failed: \(error)")

@@ -51,6 +51,7 @@ enum CompleteTodoTool: Tool {
         todo.completedAt = Date()
         todo.updatedAt = Date()
         try context.save()
+        Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
         return todo
     }
 

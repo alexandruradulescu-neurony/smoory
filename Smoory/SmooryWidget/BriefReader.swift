@@ -43,3 +43,21 @@ enum ScheduledActionsReader {
         return snapshot.entries
     }
 }
+
+enum CalendarSnapshotReader {
+    static func read() -> WidgetCalendarSnapshot? {
+        guard let url = WidgetAppGroup.containerURL?.appendingPathComponent("calendar-snapshot.json") else {
+            return nil
+        }
+        return WidgetAppGroup.decode(WidgetCalendarSnapshot.self, from: url)
+    }
+}
+
+enum TodosSnapshotReader {
+    static func read() -> WidgetTodosSnapshot? {
+        guard let url = WidgetAppGroup.containerURL?.appendingPathComponent("todos-snapshot.json") else {
+            return nil
+        }
+        return WidgetAppGroup.decode(WidgetTodosSnapshot.self, from: url)
+    }
+}

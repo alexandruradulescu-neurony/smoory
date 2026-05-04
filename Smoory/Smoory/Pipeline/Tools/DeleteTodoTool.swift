@@ -66,6 +66,7 @@ enum DeleteTodoTool: Tool {
             archivedIDs.append(sub.id)
         }
         try context.save()
+        Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
         return ArchiveResult(todo: todo, archivedSubtaskIDs: archivedIDs)
     }
 
@@ -86,6 +87,7 @@ enum DeleteTodoTool: Tool {
             }
         }
         try context.save()
+        Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {

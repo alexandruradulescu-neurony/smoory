@@ -82,6 +82,7 @@ enum DeferTodoTool: Tool {
             todo.notes = todo.notes + line
         }
         try context.save()
+        Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
         return todo
     }
 

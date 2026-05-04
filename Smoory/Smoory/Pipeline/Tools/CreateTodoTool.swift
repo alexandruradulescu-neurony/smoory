@@ -111,6 +111,7 @@ enum CreateTodoTool: Tool {
         todo.source = source
         context.insert(todo)
         try context.save()
+        Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
         return todo
     }
 

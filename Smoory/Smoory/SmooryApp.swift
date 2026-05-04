@@ -20,6 +20,11 @@ struct SmooryApp: App {
 
     @State private var scheduledActionService: ScheduledActionService?
     @State private var pollingTimer: Timer?
+    /// App-level CalendarService dedicated to the 5-min snapshot tick + app-launch
+    /// snapshot writes. Other consumers (chat, day review, etc.) keep their own
+    /// fallback instances — sharing isn't required for correctness, only for the
+    /// snapshot write path's stability.
+    @State private var snapshotCalendarService = CalendarService()
     @State private var notificationDelegate = NotificationDelegate()
     @State private var pendingDayReview = PendingDayReviewState()
     @State private var pendingWeekReview = PendingWeekReviewState()
@@ -92,6 +97,7 @@ struct SmooryApp: App {
                         await requestNotificationPermissionIfNeeded()
                         startPollingIfNeeded()
                         await refreshStaleReminders()
+                        await writeInitialSnapshots()
                     }
                     .onChange(of: scenePhase) { _, newPhase in
                         if newPhase == .active {
@@ -276,13 +282,27 @@ struct SmooryApp: App {
             await service.processOverdue()
             await dispatchFiringMorningBriefs()
         }
-        // 5-minute foreground polling per Phase 3 decision.
+        // 5-minute foreground polling per Phase 3 decision. Also drives the live
+        // calendar snapshot refresh (4.1) — same tick, sequential calls inside
+        // the same Task so we don't add a parallel Timer.
+        let calendarService = snapshotCalendarService
         pollingTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
             Task { @MainActor in
                 await service.processOverdue()
                 await dispatchFiringMorningBriefs()
+                await calendarService.refreshAndWriteSnapshot()
             }
         }
+    }
+
+    /// One-shot at app launch: write both the calendar snapshot and the todos
+    /// snapshot so the very first widget render after a cold start has data.
+    /// Each writer also calls WidgetCenter.reloadAllTimelines so the widget
+    /// picks the new state up on its next provider tick.
+    @MainActor
+    private func writeInitialSnapshots() async {
+        await snapshotCalendarService.refreshAndWriteSnapshot()
+        TodosSnapshotWriter.writeFromStore(sharedModelContainer)
     }
 
     @MainActor

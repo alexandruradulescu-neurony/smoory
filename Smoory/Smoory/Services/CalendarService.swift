@@ -1,5 +1,6 @@
 import EventKit
 import Foundation
+import WidgetKit
 
 struct CalendarEvent: Identifiable, Hashable, Sendable {
     let id: String              // EKEvent.eventIdentifier
@@ -142,6 +143,40 @@ final class CalendarService {
             ? event.end.addingTimeInterval(-1)
             : event.start
         return calendar.startOfDay(for: lastInstant)
+    }
+
+    /// Refreshes today's calendar events and writes the live snapshot the desktop
+    /// widget reads. Best-effort: failures (calendar permission denied, container
+    /// unavailable) are logged and swallowed. Calls WidgetCenter.reloadAllTimelines
+    /// on success so the widget renders the new state on its next provider invocation.
+    func refreshAndWriteSnapshot(writer: AppGroupContainerWriter? = nil) async {
+        let cal = Calendar.current
+        let now = Date()
+        let startOfToday = cal.startOfDay(for: now)
+        do {
+            let window = try await eventsForCurrentWindow(now: now)
+            let todayEvents = window.days
+                .first(where: { cal.isDate($0.date, inSameDayAs: startOfToday) })
+                .map { $0.events } ?? []
+            let entries = todayEvents.map { ev in
+                CalendarSnapshot.CalendarEventEntry(
+                    title: ev.title,
+                    startTime: ev.start,
+                    endTime: ev.end,
+                    isAllDay: ev.isAllDay,
+                    location: ev.location
+                )
+            }
+            let snapshot = CalendarSnapshot(
+                updatedAt: now,
+                forDate: startOfToday,
+                events: entries
+            )
+            (writer ?? AppGroupContainerWriter())?.writeCalendarSnapshot(snapshot)
+            WidgetCenter.shared.reloadAllTimelines()
+        } catch {
+            print("[calendar] snapshot refresh failed: \(error)")
+        }
     }
 
     private static func toCalendarEvent(_ ek: EKEvent) -> CalendarEvent {

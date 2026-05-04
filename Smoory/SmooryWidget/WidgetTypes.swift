@@ -74,3 +74,45 @@ struct WidgetScheduledActionsSnapshot: Codable {
     let updatedAt: Date
     let entries: [WidgetScheduledAction]
 }
+
+// MARK: - Live calendar snapshot mirrors (4.1)
+//
+// Mirror of CalendarSnapshot in the main app. Distinct from WidgetCalendarItem
+// (which is the morning brief's static calendar payload) — this one reflects
+// today's actual events updated on the 5-min polling tick + at app launch.
+
+struct WidgetCalendarSnapshot: Codable {
+    let updatedAt: Date
+    let forDate: Date
+    let events: [WidgetCalendarEvent]
+}
+
+struct WidgetCalendarEvent: Codable, Hashable, Identifiable {
+    var id: String { "\(title)-\(startTime.timeIntervalSince1970)" }
+    let title: String
+    let startTime: Date
+    let endTime: Date
+    let isAllDay: Bool
+    let location: String?
+}
+
+// MARK: - Live todos snapshot mirrors (4.1)
+//
+// Mirror of TodosSnapshot in the main app. Updated after every todo mutation
+// (8 instrumented call sites) so the widget shows current open-todo state and
+// the "X of Y done" progress header.
+
+struct WidgetTodosSnapshot: Codable {
+    let updatedAt: Date
+    let openCount: Int
+    let totalCount: Int
+    let openTodos: [WidgetTodoEntry]
+}
+
+struct WidgetTodoEntry: Codable, Hashable, Identifiable {
+    let id: String
+    let title: String
+    let priority: String?    // "low" | "normal" | "high" | "urgent" or nil
+    let dueDate: Date?
+    let hasSubtasks: Bool
+}

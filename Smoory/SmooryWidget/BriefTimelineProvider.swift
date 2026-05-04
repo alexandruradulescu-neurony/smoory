@@ -29,11 +29,15 @@ struct BriefTimelineProvider: TimelineProvider {
             .filter { $0.kind == "userReminder" }
             .sorted { $0.scheduledFor < $1.scheduledFor }
             .prefix(2)
+        let calendar = CalendarSnapshotReader.read()
+        let todos = TodosSnapshotReader.read()
         return BriefEntry(
             date: date,
             brief: brief,
             briefStaleness: staleness,
-            upcomingActions: Array(actions)
+            upcomingActions: Array(actions),
+            calendar: calendar,
+            todos: todos
         )
     }
 

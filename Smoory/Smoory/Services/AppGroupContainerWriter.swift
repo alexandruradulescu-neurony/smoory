@@ -9,6 +9,8 @@ final class AppGroupContainerWriter {
     private static let groupIdentifier = "group.com.assistant.smoory.shared"
     private static let snapshotFile = "scheduled-actions.json"
     private static let morningBriefFile = "morning-brief.json"
+    private static let calendarSnapshotFile = "calendar-snapshot.json"
+    private static let todosSnapshotFile = "todos-snapshot.json"
 
     private let containerURL: URL
 
@@ -30,6 +32,14 @@ final class AppGroupContainerWriter {
         containerURL.appendingPathComponent(Self.morningBriefFile)
     }
 
+    var calendarSnapshotURL: URL {
+        containerURL.appendingPathComponent(Self.calendarSnapshotFile)
+    }
+
+    var todosSnapshotURL: URL {
+        containerURL.appendingPathComponent(Self.todosSnapshotFile)
+    }
+
     func writeMorningBrief(_ brief: MorningBrief) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -39,6 +49,30 @@ final class AppGroupContainerWriter {
             try data.write(to: morningBriefURL, options: .atomic)
         } catch {
             print("[appgroup] morning brief write failed: \(error)")
+        }
+    }
+
+    func writeCalendarSnapshot(_ snapshot: CalendarSnapshot) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        do {
+            let data = try encoder.encode(snapshot)
+            try data.write(to: calendarSnapshotURL, options: .atomic)
+        } catch {
+            print("[appgroup] calendar snapshot write failed: \(error)")
+        }
+    }
+
+    func writeTodosSnapshot(_ snapshot: TodosSnapshot) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        do {
+            let data = try encoder.encode(snapshot)
+            try data.write(to: todosSnapshotURL, options: .atomic)
+        } catch {
+            print("[appgroup] todos snapshot write failed: \(error)")
         }
     }
 
