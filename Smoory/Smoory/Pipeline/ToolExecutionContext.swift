@@ -26,18 +26,24 @@ struct ToolServices: Sendable {
     /// summary turn is persisted. Optional because some startup paths
     /// construct ToolServices before hema is fully ready.
     let batchedFactExtractor: BatchedFactExtractor?
+    /// Optional fact restructurer (4.5). CompleteDayReviewTool fires it AFTER
+    /// the batched extractor so the restructurer's input includes any facts
+    /// freshly extracted during the same day-review pass.
+    let factRestructurer: FactRestructurer?
 
     init(
         calendarService: CalendarService,
         modelContainer: ModelContainer,
         hema: HemaService,
         scheduledActionService: ScheduledActionService? = nil,
-        batchedFactExtractor: BatchedFactExtractor? = nil
+        batchedFactExtractor: BatchedFactExtractor? = nil,
+        factRestructurer: FactRestructurer? = nil
     ) {
         self.calendarService = calendarService
         self.modelContainer = modelContainer
         self.hema = hema
         self.scheduledActionService = scheduledActionService
         self.batchedFactExtractor = batchedFactExtractor
+        self.factRestructurer = factRestructurer
     }
 }

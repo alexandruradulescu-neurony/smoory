@@ -727,4 +727,15 @@ final class HemaService: @unchecked Sendable {
         """, params: [newFactID.uuidString, oldFactID.uuidString])
     }
 
+    /// 4.5 archive op — sets status='archived' on the fact, leaving
+    /// superseded_by NULL (archived facts have no successor). Idempotent:
+    /// only updates active rows so a re-fire is a no-op.
+    func archiveFact(id: UUID) async throws {
+        try await db.execute("""
+            UPDATE semantic_facts
+            SET status = 'archived'
+            WHERE id = ? AND status = 'active'
+        """, params: [id.uuidString])
+    }
+
 }

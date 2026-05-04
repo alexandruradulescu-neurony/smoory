@@ -163,11 +163,105 @@ enum CandidateAcceptor {
             // The "result" of a supersession confirmation is the old fact's id —
             // that's what changed state.
             stored.resultEntityID = payload.oldFactID
+
+        case .factRewrite:
+            // 4.5 — user confirmed a refine / merge / split / contradict / archive
+            // operation. Decoded payload determines the path.
+            guard let payload = FactRestructurer.decode(stored.content) else {
+                stored.status = .rejected
+                stored.reviewedAt = Date()
+                stored.rejectionReason = "factRewrite content failed to decode"
+                try context.save()
+                return
+            }
+            try await Self.applyFactRewrite(payload: payload, hema: hema)
+            // resultEntityID points at the first old fact that changed state —
+            // best-effort audit link (split affects one old → many new; merge
+            // many → one; the first old is the most useful single referent).
+            stored.resultEntityID = payload.oldFactIDs.first
         }
 
         stored.status = .confirmed
         stored.reviewedAt = Date()
         try context.save()
+    }
+
+    /// 4.5 — applies a confirmed FactRewriteContent payload to hema. Each op
+    /// has a distinct lifecycle effect (write new + supersede old(s),
+    /// archive only, etc.). Failures throw and abort the candidate confirm
+    /// path, leaving the old fact unchanged.
+    private static func applyFactRewrite(
+        payload: FactRewriteContent,
+        hema: HemaService
+    ) async throws {
+        switch payload.op {
+        case .refine, .contradict, .merge:
+            // Single new body replaces N old facts (N=1 for refine/contradict,
+            // N=2-3 for merge). Write the new fact, supersede each old.
+            guard let newBody = payload.newBodies.first, !newBody.isEmpty else { return }
+            let newFact = SemanticFact(
+                id: UUID(),
+                body: newBody,
+                tags: [],
+                entitiesReferenced: [],
+                confidence: 0.9,
+                userConfirmed: true,
+                createdAt: Date(),
+                expiresAt: nil,
+                supersededBy: nil,
+                provenanceJSON: makeRewriteProvenance(payload: payload),
+                vector: nil,
+                isPrivate: false
+            )
+            let writtenID = try await hema.writeFact(newFact)
+            for oldID in payload.oldFactIDs {
+                try await hema.supersedeFact(oldFactID: oldID, newFactID: writtenID)
+            }
+
+        case .split:
+            // Single old fact → multiple new facts. Each new fact stands on
+            // its own; the old's superseded_by points at the first new fact
+            // (best-effort single-UUID audit link, since the schema can't
+            // express one-to-many supersession).
+            guard let oldID = payload.oldFactIDs.first else { return }
+            var newIDs: [UUID] = []
+            for newBody in payload.newBodies where !newBody.isEmpty {
+                let newFact = SemanticFact(
+                    id: UUID(),
+                    body: newBody,
+                    tags: [],
+                    entitiesReferenced: [],
+                    confidence: 0.9,
+                    userConfirmed: true,
+                    createdAt: Date(),
+                    expiresAt: nil,
+                    supersededBy: nil,
+                    provenanceJSON: makeRewriteProvenance(payload: payload),
+                    vector: nil,
+                    isPrivate: false
+                )
+                let id = try await hema.writeFact(newFact)
+                newIDs.append(id)
+            }
+            if let firstNew = newIDs.first {
+                try await hema.supersedeFact(oldFactID: oldID, newFactID: firstNew)
+            }
+
+        case .archive:
+            // No new fact written. Just mark the old archived.
+            guard let oldID = payload.oldFactIDs.first else { return }
+            try await hema.archiveFact(id: oldID)
+        }
+    }
+
+    /// Provenance JSON for facts produced by 4.5 restructurer ops.
+    /// Threads the rationale into the new fact's audit trail so future
+    /// retrieval / inspection can see why it was written.
+    private static func makeRewriteProvenance(payload: FactRewriteContent) -> String {
+        let extractedAt = Date().formatted(.iso8601)
+        let opName = payload.op.rawValue
+        let reason = payload.reason ?? ""
+        return #"{"source_kind":"fact_restructurer","op":"\#(opName)","reason":"\#(escape(reason))","extracted_at":"\#(extractedAt)"}"#
     }
 
     static func reject(

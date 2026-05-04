@@ -260,6 +260,12 @@ private struct FeedListContent: View {
                     onConfirm: { Task { await confirm(candidate) } },
                     onReject: { Task { await reject(candidate) } }
                 )
+            case .factRewrite:
+                FactRewriteCandidateRow(
+                    candidate: candidate,
+                    onConfirm: { Task { await confirm(candidate) } },
+                    onReject: { Task { await reject(candidate) } }
+                )
             default:
                 CandidateFeedRow(
                     candidate: candidate,

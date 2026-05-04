@@ -45,6 +45,15 @@ enum CompleteDayReviewTool: Tool {
             await Self.runDayReviewExtraction(extractor: extractor, hema: context.services.hema)
         }
 
+        // 4.5 — fact restructurer pass. Runs AFTER the batched extractor so
+        // its input includes any facts freshly extracted during this same
+        // day-review (e.g., a fact "Maria works at City Hospital" written
+        // moments ago can be a target for a refine/merge proposal).
+        // Conservative LLM prompt + 5 ops/day cap protect Feed from spam.
+        if let restructurer = context.services.factRestructurer {
+            await restructurer.restructure()
+        }
+
         return ToolOutput(
             toolUseId: context.toolUseId,
             content: #"{"status":"complete_day_review_signaled"}"#,

@@ -9,6 +9,7 @@ struct DebugCommands: Commands {
     let morningBriefDispatcher: MorningBriefDispatcher?
     let compactMemoryGenerator: CompactMemoryGenerator?
     let batchedFactExtractor: BatchedFactExtractor?
+    let factRestructurer: FactRestructurer?
 
     var body: some Commands {
         CommandMenu("Debug") {
@@ -212,6 +213,17 @@ struct DebugCommands: Commands {
             }
 
             Divider()
+
+            Button("Run fact restructurer now") {
+                guard let restructurer = factRestructurer else {
+                    print("[restructurer] not ready — restructurer unavailable.")
+                    return
+                }
+                Task {
+                    print("[restructurer] manual trigger")
+                    await restructurer.restructure()
+                }
+            }
 
             Button("Run batched fact extraction (last 24h)") {
                 guard let extractor = batchedFactExtractor,

@@ -210,7 +210,8 @@ When you sense the user has covered the basics, or the user signals they're done
         client: LLMClient = RoutingLLMClient(),
         calendarService: CalendarService? = nil,
         scheduledActionService: ScheduledActionService? = nil,
-        batchedFactExtractor: BatchedFactExtractor? = nil
+        batchedFactExtractor: BatchedFactExtractor? = nil,
+        factRestructurer: FactRestructurer? = nil
     ) {
         self.modelContainer = modelContainer
         self.hema = hema
@@ -224,7 +225,8 @@ When you sense the user has covered the basics, or the user signals they're done
             modelContainer: modelContainer,
             hema: hema,
             scheduledActionService: scheduledActionService,
-            batchedFactExtractor: batchedFactExtractor
+            batchedFactExtractor: batchedFactExtractor,
+            factRestructurer: factRestructurer
         )
         self.services = services
         self.orchestrator = Orchestrator(

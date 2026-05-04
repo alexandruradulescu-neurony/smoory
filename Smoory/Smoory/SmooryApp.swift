@@ -41,6 +41,11 @@ struct SmooryApp: App {
     /// (background fire), and CompleteDayReviewTool (day-review piggyback).
     /// Single-flight is enforced inside the extractor itself.
     @State private var batchedFactExtractor: BatchedFactExtractor?
+    /// App-level fact restructurer (4.5). Fires from CompleteDayReviewTool
+    /// after the batched extractor so its input includes today's freshly-
+    /// extracted facts. Single instance; the restructurer's own isRunning
+    /// flag enforces single-flight.
+    @State private var factRestructurer: FactRestructurer?
     /// Timestamp of the last scenePhase → background transition. Used to gate
     /// the 5-min background-fire trigger so Cmd-Tab task switches don't fire
     /// extraction every time.
@@ -146,7 +151,8 @@ struct SmooryApp: App {
                 scheduledActionService: scheduledActionService,
                 morningBriefDispatcher: morningBriefDispatcher,
                 compactMemoryGenerator: compactMemoryGenerator,
-                batchedFactExtractor: batchedFactExtractor
+                batchedFactExtractor: batchedFactExtractor,
+                factRestructurer: factRestructurer
             )
         }
     }
@@ -167,6 +173,14 @@ struct SmooryApp: App {
                 modelContainer: sharedModelContainer
             )
             batchedFactExtractor = extractor
+
+            // Fact restructurer (4.5) — single app-level instance, fires from
+            // CompleteDayReviewTool after the batched extractor.
+            let restructurer = FactRestructurer(
+                hema: hema,
+                modelContainer: sharedModelContainer
+            )
+            factRestructurer = restructurer
             // App-launch gap-extraction: pull the last 24h of memory turns
             // and let the salience gate decide. Detached so it doesn't slow
             // first-run UI.
@@ -184,7 +198,8 @@ struct SmooryApp: App {
                 hema: hema,
                 chatSessionID: chatSessionID,
                 scheduledActionService: scheduledActionService,
-                batchedFactExtractor: extractor
+                batchedFactExtractor: extractor,
+                factRestructurer: restructurer
             )
             // Compact memory generator (4.2) — single instance shared by the
             // morning brief route (.today side-write) and the week review hook
@@ -279,7 +294,8 @@ struct SmooryApp: App {
                     modelContainer: sharedModelContainer,
                     hema: hema,
                     scheduledActionService: svc,
-                    batchedFactExtractor: batchedFactExtractor
+                    batchedFactExtractor: batchedFactExtractor,
+                    factRestructurer: factRestructurer
                 ),
                 dismiss: { pendingDayReview.actionToPresent = nil }
             )

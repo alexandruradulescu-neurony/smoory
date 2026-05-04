@@ -38,6 +38,7 @@ struct SettingsView: View {
     @Bindable private var contradictionDetectionFailureCounter = ContradictionDetectionFailureCounter.shared
     @Bindable private var batchedExtractionFailureCounter = BatchedExtractionFailureCounter.shared
     @Bindable private var batchedExtractionSkippedCounter = BatchedExtractionSkippedCounter.shared
+    @Bindable private var factRestructuringFailureCounter = FactRestructuringFailureCounter.shared
 
     var body: some View {
         Form {
@@ -209,6 +210,19 @@ struct SettingsView: View {
                 }
                 if batchedExtractionSkippedCounter.count > 0 {
                     Text("Windows the salience gate decided weren't memory-worthy. High counts may indicate the gate is too strict; very low counts may indicate it's too lenient.")
+                        .font(.smoory_caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                HStack {
+                    Text("Fact restructurer failures since launch")
+                    Spacer()
+                    Text("\(factRestructuringFailureCounter.count)")
+                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                }
+                if factRestructuringFailureCounter.count > 0 {
+                    Text("Failures cover LLM errors and parse failures during day-end fact restructuring. The day review summary still persists when restructuring fails — only the refinement proposals don't appear.")
                         .font(.smoory_caption)
                         .foregroundStyle(.tertiary)
                 }

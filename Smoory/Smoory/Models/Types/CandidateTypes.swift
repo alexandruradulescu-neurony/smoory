@@ -10,6 +10,7 @@ enum CandidateType: Int, Codable, Sendable, CaseIterable {
     case toneObservation = 6
     case fact = 7
     case supersession = 8    // 4.3 — fact-vs-fact contradiction surfaced for user confirmation
+    case factRewrite = 9     // 4.5 — day-end fact restructuring (refine/merge/split/contradict/archive)
 
     var jsonName: String {
         switch self {
@@ -22,6 +23,7 @@ enum CandidateType: Int, Codable, Sendable, CaseIterable {
         case .toneObservation: "tone_observation"
         case .fact: "fact"
         case .supersession: "supersession"
+        case .factRewrite: "fact_rewrite"
         }
     }
 
@@ -36,6 +38,7 @@ enum CandidateType: Int, Codable, Sendable, CaseIterable {
         case .toneObservation: "Tone observation"
         case .fact: "Fact"
         case .supersession: "Possible contradiction"
+        case .factRewrite: "Refinement proposal"
         }
     }
 
@@ -50,6 +53,7 @@ enum CandidateType: Int, Codable, Sendable, CaseIterable {
         case .toneObservation: "waveform"
         case .fact: "lightbulb"
         case .supersession: "exclamationmark.triangle"
+        case .factRewrite: "wand.and.sparkles"
         }
     }
 
