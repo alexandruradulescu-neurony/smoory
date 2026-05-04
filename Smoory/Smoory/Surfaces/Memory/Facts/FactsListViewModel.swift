@@ -15,6 +15,7 @@ final class FactsListViewModel {
     var ageFilter: AgeFilter = .all
     var confidenceFilter: ConfidenceFilter = .all
     var confirmationFilter: ConfirmationFilter = .all
+    var lifecycleFilter: LifecycleFilter = .active
     var showPrivate: Bool = false
 
     enum AgeFilter: Hashable, CaseIterable, Identifiable {
@@ -51,6 +52,21 @@ final class FactsListViewModel {
             case .all: "Any confirmation"
             case .userConfirmed: "User-confirmed"
             case .unconfirmed: "Unconfirmed"
+            }
+        }
+    }
+
+    /// 4.3 — picks which lifecycle states are shown in Memory inspection's
+    /// Facts tab. Default `.active` so the typical browsing experience matches
+    /// what the chat assistant retrieves; user can opt into the audit view.
+    enum LifecycleFilter: Hashable, CaseIterable, Identifiable {
+        case active, superseded, all
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .active: "Active"
+            case .superseded: "Superseded"
+            case .all: "All"
             }
         }
     }
@@ -103,6 +119,16 @@ final class FactsListViewModel {
     var displayedFacts: [SemanticFact] {
         var filtered = facts
 
+        // Lifecycle filter (4.3) — applied client-side because the underlying
+        // fetch already pulls everything (includeSuperseded: true). Default
+        // .active matches what the chat assistant retrieves; user can opt
+        // into the audit view via the picker.
+        switch lifecycleFilter {
+        case .active: filtered = filtered.filter { $0.status == .active }
+        case .superseded: filtered = filtered.filter { $0.status == .superseded }
+        case .all: break
+        }
+
         if !showPrivate {
             filtered = filtered.filter { !$0.isPrivate }
         }
@@ -123,11 +149,21 @@ final class FactsListViewModel {
         return filtered
     }
 
+    /// Look up the body text of a fact's superseder for the "Superseded by:"
+    /// caption shown on superseded rows. Resolved from the loaded `facts` array
+    /// so no extra fetch is required (the fetch already pulls superseded rows
+    /// when includeSuperseded: true is set).
+    func supersederBody(for fact: SemanticFact) -> String? {
+        guard let superseder = fact.supersededBy else { return nil }
+        return facts.first(where: { $0.id == superseder })?.body
+    }
+
     var hasActiveFilters: Bool {
         !selectedTags.isEmpty
             || ageFilter != .all
             || confidenceFilter != .all
             || confirmationFilter != .all
+            || lifecycleFilter != .active
             || !searchText.isEmpty
     }
 

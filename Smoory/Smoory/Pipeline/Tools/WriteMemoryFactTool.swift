@@ -91,6 +91,22 @@ enum WriteMemoryFactTool: Tool {
             chatSessionID: context.chatSessionID
         )
 
+        // Fire-and-forget contradiction detection (4.3). User's chat does not
+        // block on the detector's LLM call; supersession candidates appear in
+        // Feed when ready (~5–10 seconds after the fact lands). Wrap in a
+        // MainActor task because runDetectionAfterWrite is @MainActor-isolated
+        // and execute() runs in non-isolated context.
+        let factBody = fact.body
+        let services = context.services
+        Task { @MainActor in
+            SupersessionCandidateBuilder.runDetectionAfterWrite(
+                newFactID: writtenID,
+                newFactBody: factBody,
+                hema: services.hema,
+                modelContainer: services.modelContainer
+            )
+        }
+
         let json = #"{"status":"written","id":"\#(writtenID.uuidString)"}"#
         return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
     }

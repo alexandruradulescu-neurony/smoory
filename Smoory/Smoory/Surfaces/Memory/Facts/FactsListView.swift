@@ -59,6 +59,12 @@ struct FactsListView: View {
                     isAllCase: { $0 == .all }
                 )
 
+                FilterPicker(
+                    selected: $viewModel.lifecycleFilter,
+                    titleProvider: { $0.title },
+                    isAllCase: { $0 == .active }
+                )
+
                 Menu(tagButtonLabel) {
                     ForEach(viewModel.availableTags, id: \.self) { tag in
                         Toggle(tag, isOn: Binding(

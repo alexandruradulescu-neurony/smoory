@@ -111,6 +111,49 @@ enum HemaSchema {
                 "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
                 params: [2, Date().formatted(.iso8601)]
             )
+        },
+
+        // 3: add explicit lifecycle status to semantic_facts (4.3). Refines the
+        // existing supersededBy column with a 'active' | 'superseded' | 'archived'
+        // state machine. Backfills 'superseded' for any row whose superseded_by is
+        // already populated, leaves the rest defaulting to 'active'. Each step is
+        // wrapped in try-catch so partial failures (older SQLite missing ALTER ADD)
+        // log + skip rather than aborting the whole migration.
+        Migration(version: 3, description: "add status column to semantic_facts") { db in
+            do {
+                try await db.execute("""
+                    ALTER TABLE semantic_facts
+                    ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
+                """)
+            } catch {
+                let version = (try? await db.query("SELECT sqlite_version()", params: []))?
+                    .first?["sqlite_version()"] as? String ?? "unknown"
+                print("[hema] migration 3: ALTER ADD COLUMN status failed on SQLite \(version): \(error)")
+            }
+
+            do {
+                try await db.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_facts_status
+                    ON semantic_facts(status)
+                """)
+            } catch {
+                print("[hema] migration 3: index creation failed: \(error)")
+            }
+
+            do {
+                try await db.execute("""
+                    UPDATE semantic_facts
+                    SET status = 'superseded'
+                    WHERE superseded_by IS NOT NULL
+                """)
+            } catch {
+                print("[hema] migration 3: backfill failed: \(error)")
+            }
+
+            try await db.execute(
+                "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+                params: [3, Date().formatted(.iso8601)]
+            )
         }
     ]
 

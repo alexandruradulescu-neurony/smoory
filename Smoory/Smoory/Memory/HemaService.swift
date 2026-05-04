@@ -312,7 +312,8 @@ final class HemaService: @unchecked Sendable {
                    created_at,
                    COALESCE(expires_at, '') AS expires_at,
                    COALESCE(superseded_by, '') AS superseded_by,
-                   COALESCE(provenance_json, '') AS provenance_json
+                   COALESCE(provenance_json, '') AS provenance_json,
+                   COALESCE(status, 'active') AS status
             FROM semantic_facts
             WHERE id = ?
             LIMIT 1
@@ -332,7 +333,7 @@ final class HemaService: @unchecked Sendable {
             params.append(Date().formatted(.iso8601))
         }
         if !f.includeSuperseded {
-            clauses.append("superseded_by IS NULL")
+            clauses.append("status = 'active'")
         }
         if !f.includePrivate {
             clauses.append("is_private = 0")
@@ -375,7 +376,8 @@ final class HemaService: @unchecked Sendable {
                    created_at,
                    COALESCE(expires_at, '') AS expires_at,
                    COALESCE(superseded_by, '') AS superseded_by,
-                   COALESCE(provenance_json, '') AS provenance_json
+                   COALESCE(provenance_json, '') AS provenance_json,
+                   COALESCE(status, 'active') AS status
             FROM semantic_facts
             WHERE \(clauses.joined(separator: " AND "))
             ORDER BY created_at DESC
@@ -413,19 +415,26 @@ final class HemaService: @unchecked Sendable {
 
     /// Top-k facts by similarity, with optional structured filters.
     /// Excludes private facts by default — overridable for inspection paths only.
-    /// Excludes superseded facts always; expired facts unless `excludeExpired: false`.
+    /// Excludes superseded facts by default — 4.3 contradiction detection passes
+    /// `excludeSuperseded: false` to scan the full lifecycle for false-positive
+    /// supersession candidates flagged against rows that are already retired.
+    /// Expired facts excluded unless `excludeExpired: false`.
     func retrieveSimilarFacts(
         query: String,
         k: Int = 5,
         tagFilter: [String]? = nil,
         entityFilter: [EntityReference]? = nil,
         excludeExpired: Bool = true,
-        excludePrivate: Bool = true
+        excludePrivate: Bool = true,
+        excludeSuperseded: Bool = true
     ) async throws -> [(SemanticFact, Double)] {
         let queryVector = try await embedQuery(query)
         let overK = max(4 * k, 20)
 
-        var clauses: [String] = ["f.superseded_by IS NULL"]
+        var clauses: [String] = []
+        if excludeSuperseded {
+            clauses.append("f.status = 'active'")
+        }
         var params: [any Sendable] = [queryVector, overK]
 
         if excludePrivate {
@@ -450,6 +459,13 @@ final class HemaService: @unchecked Sendable {
             }
         }
 
+        // If every conditional filter was opted-out (uncommon — only contradiction
+        // detection asks for full-lifecycle without other filters), guard the WHERE
+        // clause from being empty.
+        if clauses.isEmpty {
+            clauses.append("1=1")
+        }
+
         params.append(k)
 
         // COALESCE nullable text columns to avoid SQLiteVec's first-row column-type cache crash.
@@ -459,6 +475,7 @@ final class HemaService: @unchecked Sendable {
                    COALESCE(f.expires_at, '') AS expires_at,
                    COALESCE(f.superseded_by, '') AS superseded_by,
                    COALESCE(f.provenance_json, '') AS provenance_json,
+                   COALESCE(f.status, 'active') AS status,
                    sub.distance
             FROM (
                 SELECT rowid, distance
@@ -680,13 +697,34 @@ final class HemaService: @unchecked Sendable {
         let expiresAt = parseISO8601(row["expires_at"] as? String)
         let supersededBy = (row["superseded_by"] as? String).flatMap(UUID.init(uuidString:))
         let provenanceJSON = row["provenance_json"] as? String
+        // 4.3: lifecycle status. SELECT lists COALESCE the column to 'active' so a
+        // pre-migration row or a SELECT without the column still decodes cleanly.
+        let statusRaw = (row["status"] as? String) ?? "active"
+        let status = FactStatus(rawValue: statusRaw) ?? .active
 
         return SemanticFact(
             id: id, body: body, tags: tags, entitiesReferenced: entities,
             confidence: confidence, userConfirmed: userConfirmed,
             createdAt: createdAt, expiresAt: expiresAt, supersededBy: supersededBy,
-            provenanceJSON: provenanceJSON, vector: vector, isPrivate: isPrivate
+            provenanceJSON: provenanceJSON, vector: vector, isPrivate: isPrivate,
+            status: status
         )
+    }
+
+    // MARK: - Lifecycle (4.3)
+
+    /// Marks the existing fact as superseded by the new fact's id. Idempotent:
+    /// the WHERE clause guards against overwriting an already-superseded link
+    /// (e.g., a double-confirm race from two queued supersession candidates).
+    /// `updateFact` does not write status — lifecycle changes go through this
+    /// dedicated path so writes never silently mutate the column.
+    func supersedeFact(oldFactID: UUID, newFactID: UUID) async throws {
+        try await db.execute("""
+            UPDATE semantic_facts
+            SET status = 'superseded',
+                superseded_by = ?
+            WHERE id = ? AND status = 'active'
+        """, params: [newFactID.uuidString, oldFactID.uuidString])
     }
 
 }

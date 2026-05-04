@@ -30,6 +30,16 @@ struct MemoryTurn: Identifiable, Hashable, Sendable {
     let vector: [Float]?            // populated when an embedder is configured
 }
 
+/// Lifecycle state of a semantic fact (4.3). Refines the existing supersededBy
+/// column. `.active` rows are eligible for retrieval; `.superseded` rows stay
+/// in the database for audit trail but are excluded from default queries;
+/// `.archived` is reserved for future user-initiated archival and unused in 4.3.
+enum FactStatus: String, Codable, Sendable, CaseIterable {
+    case active
+    case superseded
+    case archived
+}
+
 struct SemanticFact: Identifiable, Hashable, Sendable {
     let id: UUID
     let body: String
@@ -43,6 +53,41 @@ struct SemanticFact: Identifiable, Hashable, Sendable {
     let provenanceJSON: String?     // shape per MEMORY.md "Provenance" section
     let vector: [Float]?            // nil in 2.1a
     let isPrivate: Bool             // per-fact private flag — never sent to LLM by default
+    let status: FactStatus          // 4.3 lifecycle state, default .active
+
+    /// Explicit init with a default for `status` so existing call sites that
+    /// pre-date 4.3 (and don't pass status) still compile. Hema's decoder is
+    /// the only path that needs to pass status explicitly — every other writer
+    /// creates active facts.
+    init(
+        id: UUID,
+        body: String,
+        tags: [String],
+        entitiesReferenced: [EntityReference],
+        confidence: Double,
+        userConfirmed: Bool,
+        createdAt: Date,
+        expiresAt: Date?,
+        supersededBy: UUID?,
+        provenanceJSON: String?,
+        vector: [Float]?,
+        isPrivate: Bool,
+        status: FactStatus = .active
+    ) {
+        self.id = id
+        self.body = body
+        self.tags = tags
+        self.entitiesReferenced = entitiesReferenced
+        self.confidence = confidence
+        self.userConfirmed = userConfirmed
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.supersededBy = supersededBy
+        self.provenanceJSON = provenanceJSON
+        self.vector = vector
+        self.isPrivate = isPrivate
+        self.status = status
+    }
 }
 
 struct FactFilter: Sendable, Hashable {

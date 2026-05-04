@@ -35,6 +35,7 @@ struct SettingsView: View {
     @Bindable private var briefFailureCounter = MorningBriefFailureCounter.shared
     @Bindable private var patternFailureCounter = PatternAnalyzerFailureCounter.shared
     @Bindable private var compactMemoryFailureCounter = CompactMemoryFailureCounter.shared
+    @Bindable private var contradictionDetectionFailureCounter = ContradictionDetectionFailureCounter.shared
 
     var body: some View {
         Form {
@@ -167,6 +168,19 @@ struct SettingsView: View {
                 }
                 if compactMemoryFailureCounter.count > 0 {
                     Text("Failures cover compact memory regeneration: LLM errors, parse failures, and out-of-bounds word counts after retry. The previous active compact memory of that kind stays in place when regeneration fails.")
+                        .font(.smoory_caption)
+                        .foregroundStyle(.tertiary)
+                }
+
+                HStack {
+                    Text("Contradiction detection failures since launch")
+                    Spacer()
+                    Text("\(contradictionDetectionFailureCounter.count)")
+                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                }
+                if contradictionDetectionFailureCounter.count > 0 {
+                    Text("Failures cover LLM errors, parse failures, and timeouts during contradiction detection. The fact still lands when detection fails — only the supersession candidate doesn't appear.")
                         .font(.smoory_caption)
                         .foregroundStyle(.tertiary)
                 }

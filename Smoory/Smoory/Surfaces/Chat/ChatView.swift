@@ -138,11 +138,19 @@ private struct ChatViewContent: View {
         HStack(alignment: .bottom, spacing: 8) {
             TextField("Message Smoory", text: $viewModel.draft, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
-                .lineLimit(1...6)
+                .lineLimit(3...12)
                 .focused($isInputFocused)
                 .onKeyPress(phases: .down) { press in
                     guard press.key == .return else { return .ignored }
-                    if press.modifiers.contains(.shift) { return .ignored }
+                    if press.modifiers.contains(.shift) {
+                        // Explicit newline insertion. macOS SwiftUI doesn't reliably
+                        // forward shift+return to the underlying NSTextView when
+                        // onKeyPress is attached, so we append "\n" ourselves.
+                        // Cursor-position-aware insert would need NSViewRepresentable —
+                        // appending at end is fine for chat where typing is linear.
+                        viewModel.draft.append("\n")
+                        return .handled
+                    }
                     submit()
                     return .handled
                 }

@@ -9,6 +9,7 @@ enum CandidateType: Int, Codable, Sendable, CaseIterable {
     case availability = 5
     case toneObservation = 6
     case fact = 7
+    case supersession = 8    // 4.3 — fact-vs-fact contradiction surfaced for user confirmation
 
     var jsonName: String {
         switch self {
@@ -20,6 +21,7 @@ enum CandidateType: Int, Codable, Sendable, CaseIterable {
         case .availability: "availability"
         case .toneObservation: "tone_observation"
         case .fact: "fact"
+        case .supersession: "supersession"
         }
     }
 
@@ -33,6 +35,7 @@ enum CandidateType: Int, Codable, Sendable, CaseIterable {
         case .availability: "Availability"
         case .toneObservation: "Tone observation"
         case .fact: "Fact"
+        case .supersession: "Possible contradiction"
         }
     }
 
@@ -46,6 +49,7 @@ enum CandidateType: Int, Codable, Sendable, CaseIterable {
         case .availability: "calendar.badge.clock"
         case .toneObservation: "waveform"
         case .fact: "lightbulb"
+        case .supersession: "exclamationmark.triangle"
         }
     }
 

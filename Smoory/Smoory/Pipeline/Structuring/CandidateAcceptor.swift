@@ -81,7 +81,14 @@ enum CandidateAcceptor {
             )
             // writeFact returns the surviving id — may differ from fact.id when dedup
             // matched an existing row. Use it for the audit reference.
-            stored.resultEntityID = try await hema.writeFact(fact)
+            let writtenID = try await hema.writeFact(fact)
+            stored.resultEntityID = writtenID
+            SupersessionCandidateBuilder.runDetectionAfterWrite(
+                newFactID: writtenID,
+                newFactBody: fact.body,
+                hema: hema,
+                modelContainer: modelContainer
+            )
 
         case .toneObservation:
             // Stopgap (see PHASE_4_NOTES.md): tag-as-tone fact until ToneProfile flow lands.
@@ -102,7 +109,14 @@ enum CandidateAcceptor {
                 vector: nil,
                 isPrivate: false
             )
-            stored.resultEntityID = try await hema.writeFact(fact)
+            let writtenID = try await hema.writeFact(fact)
+            stored.resultEntityID = writtenID
+            SupersessionCandidateBuilder.runDetectionAfterWrite(
+                newFactID: writtenID,
+                newFactBody: fact.body,
+                hema: hema,
+                modelContainer: modelContainer
+            )
 
         case .fact:
             let fact = SemanticFact(
@@ -122,7 +136,33 @@ enum CandidateAcceptor {
                 vector: nil,
                 isPrivate: false
             )
-            stored.resultEntityID = try await hema.writeFact(fact)
+            let writtenID = try await hema.writeFact(fact)
+            stored.resultEntityID = writtenID
+            SupersessionCandidateBuilder.runDetectionAfterWrite(
+                newFactID: writtenID,
+                newFactBody: fact.body,
+                hema: hema,
+                modelContainer: modelContainer
+            )
+
+        case .supersession:
+            // 4.3 — user confirmed the contradiction. Mark the old fact superseded,
+            // linking it to the new fact's id. Decoded payload preserves both ids
+            // even if the underlying SemanticFact rows have since been edited.
+            guard let payload = SupersessionCandidateBuilder.decode(stored.content) else {
+                stored.status = .rejected
+                stored.reviewedAt = Date()
+                stored.rejectionReason = "supersession content failed to decode"
+                try context.save()
+                return
+            }
+            try await hema.supersedeFact(
+                oldFactID: payload.oldFactID,
+                newFactID: payload.newFactID
+            )
+            // The "result" of a supersession confirmation is the old fact's id —
+            // that's what changed state.
+            stored.resultEntityID = payload.oldFactID
         }
 
         stored.status = .confirmed

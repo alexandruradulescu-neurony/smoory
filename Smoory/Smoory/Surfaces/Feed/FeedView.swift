@@ -253,13 +253,22 @@ private struct FeedListContent: View {
     private func rowView(for row: FeedRow) -> some View {
         switch row {
         case .candidate(let candidate):
-            CandidateFeedRow(
-                candidate: candidate,
-                isExpanded: expandedRowID == candidate.id,
-                onToggleExpand: { toggleExpand(candidate.id) },
-                onConfirm: { Task { await confirm(candidate) } },
-                onReject: { Task { await reject(candidate) } }
-            )
+            switch candidate.type {
+            case .supersession:
+                SupersessionCandidateRow(
+                    candidate: candidate,
+                    onConfirm: { Task { await confirm(candidate) } },
+                    onReject: { Task { await reject(candidate) } }
+                )
+            default:
+                CandidateFeedRow(
+                    candidate: candidate,
+                    isExpanded: expandedRowID == candidate.id,
+                    onToggleExpand: { toggleExpand(candidate.id) },
+                    onConfirm: { Task { await confirm(candidate) } },
+                    onReject: { Task { await reject(candidate) } }
+                )
+            }
         case .feedItem(let item):
             switch item.kind {
             case .morningBrief:
