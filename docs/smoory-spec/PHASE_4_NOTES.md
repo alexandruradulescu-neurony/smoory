@@ -136,3 +136,9 @@ sections here using the same shape:
 These notes get promoted into BEHAVIORS.md / TOOLS.md / AI_PROMPTS.md
 during Phase 4 design, not before. Keeping them isolated here means
 the formal spec stays clean while ideas accumulate.
+
+---
+
+## Deferred: TodosService refactor (post-4.1)
+
+4.1 instrumented 8 todo mutation sites with `TodosSnapshotWriter.writeFromStore()` calls. A full `TodosService` to centralize them was out of scope for 4.1. When cross-cutting todo behavior is needed (auto-archive, completion telemetry, structuring layer integration), refactor to `TodosService` and collapse the helper calls to one site. Until then, the helper pattern is the accepted architecture.
