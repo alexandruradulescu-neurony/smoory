@@ -208,6 +208,22 @@ final class ScheduledActionService {
         return try context.fetch(descriptor)
     }
 
+    /// Returns all `.completed` scheduled actions of the given kind, sorted by
+    /// completedAt descending. Used by compact-memory regeneration to gate the
+    /// every-Nth-completion `.overall` refresh after a week review.
+    func completedActions(of kind: ScheduledActionKind) throws -> [ScheduledAction] {
+        let context = ModelContext(modelContainer)
+        let kindRaw = kind.rawValue
+        let completedRaw = ScheduledActionStatus.completed.rawValue
+        let descriptor = FetchDescriptor<ScheduledAction>(
+            predicate: #Predicate {
+                $0.kindRaw == kindRaw && $0.statusRaw == completedRaw
+            },
+            sortBy: [SortDescriptor(\.completedAt, order: .reverse)]
+        )
+        return try context.fetch(descriptor)
+    }
+
     /// Direct fetch by row id. Used by notification routing where the action id is
     /// already known and a history scan is wasteful.
     func action(id: UUID) throws -> ScheduledAction? {

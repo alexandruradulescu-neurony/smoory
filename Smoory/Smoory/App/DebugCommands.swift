@@ -7,6 +7,7 @@ struct DebugCommands: Commands {
     let modelContainer: ModelContainer
     let scheduledActionService: ScheduledActionService?
     let morningBriefDispatcher: MorningBriefDispatcher?
+    let compactMemoryGenerator: CompactMemoryGenerator?
 
     var body: some Commands {
         CommandMenu("Debug") {
@@ -207,6 +208,81 @@ struct DebugCommands: Commands {
                 print("---- morning-brief.json (\(path)) ----")
                 print(str)
                 print("---- END ----")
+            }
+
+            Divider()
+
+            Button("Regenerate .today compact memory") {
+                guard let generator = compactMemoryGenerator else {
+                    print("[compact] Not ready — generator unavailable.")
+                    return
+                }
+                Task {
+                    do {
+                        let memory = try await generator.generateToday()
+                        print("[compact] .today (\(memory.wordCount) words):")
+                        print(memory.body)
+                    } catch {
+                        print("[compact] .today generation failed: \(error)")
+                    }
+                }
+            }
+
+            Button("Regenerate .recent compact memory") {
+                guard let generator = compactMemoryGenerator else {
+                    print("[compact] Not ready — generator unavailable.")
+                    return
+                }
+                Task {
+                    do {
+                        let memory = try await generator.generateRecent()
+                        print("[compact] .recent (\(memory.wordCount) words):")
+                        print(memory.body)
+                    } catch {
+                        print("[compact] .recent generation failed: \(error)")
+                    }
+                }
+            }
+
+            Button("Regenerate .overall compact memory") {
+                guard let generator = compactMemoryGenerator else {
+                    print("[compact] Not ready — generator unavailable.")
+                    return
+                }
+                Task {
+                    do {
+                        let memory = try await generator.generateOverall()
+                        print("[compact] .overall (\(memory.wordCount) words):")
+                        print(memory.body)
+                    } catch {
+                        print("[compact] .overall generation failed: \(error)")
+                    }
+                }
+            }
+
+            Button("Show all active compact memories") {
+                guard case .ready(let hema) = hemaState else {
+                    print("[compact] hema not ready.")
+                    return
+                }
+                Task {
+                    do {
+                        let memories = try await hema.readActiveCompactMemories()
+                        print("---- ACTIVE COMPACT MEMORIES ----")
+                        if memories.isEmpty {
+                            print("(none)")
+                        } else {
+                            for m in memories {
+                                print("[\(m.kind.rawValue)] \(m.wordCount) words, generated \(m.generatedAt.formatted(.iso8601))")
+                                print(m.body)
+                                print("---")
+                            }
+                        }
+                        print("---- END ----")
+                    } catch {
+                        print("[compact] read failed: \(error)")
+                    }
+                }
             }
 
             Divider()

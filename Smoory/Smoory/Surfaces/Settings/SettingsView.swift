@@ -34,6 +34,7 @@ struct SettingsView: View {
     @Bindable private var failureCounter = StructuringFailureCounter.shared
     @Bindable private var briefFailureCounter = MorningBriefFailureCounter.shared
     @Bindable private var patternFailureCounter = PatternAnalyzerFailureCounter.shared
+    @Bindable private var compactMemoryFailureCounter = CompactMemoryFailureCounter.shared
 
     var body: some View {
         Form {
@@ -155,6 +156,19 @@ struct SettingsView: View {
                     Text("\(patternFailureCounter.count)")
                         .foregroundStyle(.secondary)
                         .font(.system(.body, design: .monospaced))
+                }
+
+                HStack {
+                    Text("Compact memory failures since launch")
+                    Spacer()
+                    Text("\(compactMemoryFailureCounter.count)")
+                        .foregroundStyle(.secondary)
+                        .font(.system(.body, design: .monospaced))
+                }
+                if compactMemoryFailureCounter.count > 0 {
+                    Text("Failures cover compact memory regeneration: LLM errors, parse failures, and out-of-bounds word counts after retry. The previous active compact memory of that kind stays in place when regeneration fails.")
+                        .font(.smoory_caption)
+                        .foregroundStyle(.tertiary)
                 }
             }
         }

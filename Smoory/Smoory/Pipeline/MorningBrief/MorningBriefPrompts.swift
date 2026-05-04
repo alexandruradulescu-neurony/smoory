@@ -26,7 +26,8 @@ Output format — return ONLY a JSON object, no fences, no preamble, no commenta
     { "title": "<event title>", "startTime": "<ISO 8601>", "endTime": "<ISO 8601>", "isAllDay": <bool>, "location": "<string or null>" }
   ],
   "reflectiveNote": "<optional 1-2 sentence observation; null if nothing notable>",
-  "goalNudge": { "goalTitle": "<exact title>", "nudgeText": "<brief, curious not judgmental>" }
+  "goalNudge": { "goalTitle": "<exact title>", "nudgeText": "<brief, curious not judgmental>" },
+  "todayCompactMemory": "<plain prose summary of today, 80–200 words, no JSON, no headers, no bullet points; empty string for genuinely empty days>"
 }
 
 Rules:
@@ -34,6 +35,7 @@ Rules:
 - calendar: every event from get_calendar_window's "today" sorted ascending by startTime; empty array if none.
 - reflectiveNote: null if nothing meaningful comes to mind. Don't fabricate.
 - goalNudge: null unless a tracked goal genuinely needs attention today.
+- todayCompactMemory: see "Compact memory" rules below.
 
 Headline guidance:
 - Pick the most important thing about today. A key meeting, a high-priority todo, an opportunity ("lighter than usual day = good for deep work"), or a goal-relevant moment.
@@ -93,6 +95,17 @@ Tools available:
 - get_active_goals — fetch goals (call when reflective note or goal nudge might apply)
 - retrieve_memory — pull recent context for the reflective note (call sparingly, only when reflectiveNote is being generated)
 
+Compact memory — todayCompactMemory field rules:
+- A plain prose summary of today the chat assistant will read on every chat call.
+- 80–200 words. One or two short paragraphs.
+- Capture the shape of today, notable events from today, anything the user has mentioned this morning that gives the day texture.
+- Energy or mood signals only when clearly stated by the user — never inferred or named clinically.
+- Do NOT use therapy-speak, motivational language, or performative warmth.
+- Do NOT include long-running goals or lifetime context (those live in other compact memory tiers the assistant also has access to).
+- Do NOT use emojis. Do NOT use exclamation points (unless they appear in a direct quote).
+- The value is a JSON string with newlines escaped as \\n per the JSON spec.
+- If today is genuinely empty (no calendar events, no todos, no morning conversation), set todayCompactMemory to an empty string and the system will skip the compact memory write for this day.
+
 Use the tools, then return the JSON. Do not include text outside the JSON. The first character must be { and the last must be }.
 """
 
@@ -104,10 +117,22 @@ No fences, no preamble, no commentary. The first character of your response must
 and the last must be `}`.
 """
 
+    /// Wrapper returned by `parse(_:generatedAt:forDate:)`. Carries the strict
+    /// `MorningBrief` plus the milestone-4.2 optional `todayCompactMemory` body.
+    /// The compact memory is read permissively (independently of the strict
+    /// `MorningBriefPayload` decode) so an absent or malformed field does not
+    /// fail the brief.
+    struct ParsedBrief: Sendable {
+        let brief: MorningBrief
+        let todayCompactMemory: String?    // nil = absent or empty after trim
+    }
+
     /// Best-effort parser. Strips ```json fences, trims whitespace, decodes against
     /// MorningBriefPayload, then assembles a MorningBrief with synthesized id/dates.
-    /// Returns nil on any failure — caller decides retry vs surface error.
-    static func parse(_ raw: String, generatedAt: Date, forDate: Date) -> MorningBrief? {
+    /// Reads the milestone-4.2 todayCompactMemory field via a permissive second
+    /// pass — its absence does not fail the brief. Returns nil on any failure
+    /// of the strict brief decode — caller decides retry vs surface error.
+    static func parse(_ raw: String, generatedAt: Date, forDate: Date) -> ParsedBrief? {
         let stripped = stripFences(raw).trimmingCharacters(in: .whitespacesAndNewlines)
         let scoped = extractFirstJSONObject(stripped) ?? stripped
         guard !scoped.isEmpty, let data = scoped.data(using: .utf8) else {
@@ -126,7 +151,7 @@ and the last must be `}`.
         }
         do {
             let payload = try decoder.decode(MorningBriefPayload.self, from: data)
-            return MorningBrief(
+            let brief = MorningBrief(
                 id: UUID(),
                 generatedAt: generatedAt,
                 forDate: forDate,
@@ -136,6 +161,20 @@ and the last must be `}`.
                 reflectiveNote: payload.reflectiveNote,
                 goalNudge: payload.goalNudge
             )
+
+            // Permissive second pass for todayCompactMemory. Lives outside the
+            // strict MorningBriefPayload so older brief responses (or LLM regressions
+            // that omit the field) still parse cleanly.
+            let compactBody: String? = {
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    return nil
+                }
+                guard let raw = json["todayCompactMemory"] as? String else { return nil }
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }()
+
+            return ParsedBrief(brief: brief, todayCompactMemory: compactBody)
         } catch {
             print("[brief] parse failed — decode error: \(error). raw prefix: \(scoped.prefix(400))")
             return nil

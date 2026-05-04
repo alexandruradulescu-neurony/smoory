@@ -31,6 +31,11 @@ struct SmooryApp: App {
     @State private var firedReminderQueue = FiredReminderQueue()
     @State private var navigationState = NavigationState()
     @State private var morningBriefDispatcher: MorningBriefDispatcher?
+    /// App-level CompactMemoryGenerator constructed once hema is ready. Threaded into
+    /// MorningBriefGenerator (for the .today brief side-write) and into
+    /// WeekReviewViewModel (for .recent + counter-gated .overall regeneration on review
+    /// completion). Debug commands also call its three generate* methods directly.
+    @State private var compactMemoryGenerator: CompactMemoryGenerator?
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -115,7 +120,8 @@ struct SmooryApp: App {
                 hemaState: hemaState,
                 modelContainer: sharedModelContainer,
                 scheduledActionService: scheduledActionService,
-                morningBriefDispatcher: morningBriefDispatcher
+                morningBriefDispatcher: morningBriefDispatcher,
+                compactMemoryGenerator: compactMemoryGenerator
             )
         }
     }
@@ -134,6 +140,16 @@ struct SmooryApp: App {
                 chatSessionID: chatSessionID,
                 scheduledActionService: scheduledActionService
             )
+            // Compact memory generator (4.2) — single instance shared by the
+            // morning brief route (.today side-write) and the week review hook
+            // (.recent + counter-gated .overall).
+            let compactGen = CompactMemoryGenerator(
+                modelContainer: sharedModelContainer,
+                hema: hema,
+                calendarService: snapshotCalendarService
+            )
+            compactMemoryGenerator = compactGen
+
             // Morning brief dispatcher needs hema for retrieve_memory tool calls; build
             // it now and (re)attach the notification delegate so morning_brief taps route
             // through the dispatcher.
@@ -144,7 +160,8 @@ struct SmooryApp: App {
                         hema: hema,
                         calendarService: CalendarService(),
                         appGroupWriter: AppGroupContainerWriter(),
-                        scheduledActionService: svc
+                        scheduledActionService: svc,
+                        compactMemoryGenerator: compactGen
                     ),
                     scheduledActionService: svc,
                     modelContainer: sharedModelContainer
@@ -227,7 +244,8 @@ struct SmooryApp: App {
                     action: weekAction,
                     modelContainer: sharedModelContainer,
                     hema: hema,
-                    scheduledActionService: svc
+                    scheduledActionService: svc,
+                    compactMemoryGenerator: compactMemoryGenerator
                 ),
                 dismiss: { pendingWeekReview.actionToPresent = nil }
             )

@@ -20,6 +20,7 @@ final class WeekReviewViewModel {
     private let hema: HemaService
     private let structuringService: StructuringService
     private let patternAnalyzer: ScheduledActionPatternAnalyzer
+    private let compactMemoryGenerator: CompactMemoryGenerator?
     private let firedAt: Date = Date()
 
     init(
@@ -28,12 +29,14 @@ final class WeekReviewViewModel {
         hema: HemaService,
         scheduledActionService: ScheduledActionService,
         client: LLMClient = RoutingLLMClient(),
-        calendarService: CalendarService? = nil
+        calendarService: CalendarService? = nil,
+        compactMemoryGenerator: CompactMemoryGenerator? = nil
     ) {
         self.action = action
         self.modelContainer = modelContainer
         self.hema = hema
         self.scheduledActionService = scheduledActionService
+        self.compactMemoryGenerator = compactMemoryGenerator
 
         let resolvedCalendar = calendarService ?? CalendarService()
         let services = ToolServices(
@@ -199,6 +202,39 @@ final class WeekReviewViewModel {
         }
         let elapsed = Date().timeIntervalSince(firedAt)
         _ = try? await scheduledActionService.markCompleted(actionID: action.id, userResponseTime: elapsed)
+
+        // Compact memory regeneration hooks. Both run as detached tasks so the
+        // sheet dismisses immediately; if the user closes the app before the
+        // LLM call returns, that week's regeneration simply doesn't land — next
+        // week's catches up.
+        if let generator = compactMemoryGenerator {
+            // .recent — every completed week review.
+            Task.detached { @MainActor [generator] in
+                do {
+                    let memory = try await generator.generateRecent()
+                    print("[compact] regenerated .recent (\(memory.wordCount) words)")
+                } catch {
+                    CompactMemoryFailureCounter.shared.increment()
+                    print("[compact] .recent regeneration failed: \(error)")
+                }
+            }
+
+            // .overall — gated on every 4th completed week review. completeReview
+            // runs before this count is read, so the just-completed review is
+            // included in the count.
+            let count = (try? scheduledActionService.completedActions(of: .weekReview).count) ?? 0
+            if count > 0 && count.isMultiple(of: 4) {
+                Task.detached { @MainActor [generator] in
+                    do {
+                        let memory = try await generator.generateOverall()
+                        print("[compact] regenerated .overall (\(memory.wordCount) words)")
+                    } catch {
+                        CompactMemoryFailureCounter.shared.increment()
+                        print("[compact] .overall regeneration failed: \(error)")
+                    }
+                }
+            }
+        }
     }
 
     func skipReview() async {

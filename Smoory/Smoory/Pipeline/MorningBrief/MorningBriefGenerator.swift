@@ -26,6 +26,11 @@ final class MorningBriefGenerator {
     private let appGroupWriter: AppGroupContainerWriter?
     private let scheduledActionService: ScheduledActionService
     private let client: LLMClient
+    /// Optional — when present, the parsed brief's `todayCompactMemory` body is
+    /// persisted as the active `.today` compact memory via the generator's
+    /// `writeTodayFromBrief` path. Nil-safe: missing generator or missing body
+    /// just skips the side-write.
+    private let compactMemoryGenerator: CompactMemoryGenerator?
 
     init(
         modelContainer: ModelContainer,
@@ -33,7 +38,8 @@ final class MorningBriefGenerator {
         calendarService: CalendarService,
         appGroupWriter: AppGroupContainerWriter?,
         scheduledActionService: ScheduledActionService,
-        client: LLMClient = RoutingLLMClient()
+        client: LLMClient = RoutingLLMClient(),
+        compactMemoryGenerator: CompactMemoryGenerator? = nil
     ) {
         self.modelContainer = modelContainer
         self.hema = hema
@@ -41,6 +47,7 @@ final class MorningBriefGenerator {
         self.appGroupWriter = appGroupWriter
         self.scheduledActionService = scheduledActionService
         self.client = client
+        self.compactMemoryGenerator = compactMemoryGenerator
     }
 
     /// Generate a brief, persist it, fire a fresh notification with headline as body.
@@ -67,30 +74,30 @@ final class MorningBriefGenerator {
         let forDate = (action?.scheduledFor).map { Calendar.current.startOfDay(for: $0) } ?? Calendar.current.startOfDay(for: now)
 
         // First attempt — strict prompt.
-        if let brief = try await attempt(
+        if let parsed = try await attempt(
             orchestrator: orchestrator,
             systemPrompt: MorningBriefPrompts.systemPrompt,
             userMessage: userMessage,
             generatedAt: now,
             forDate: forDate
         ) {
-            try persist(brief)
-            return brief
+            try persist(parsed)
+            return parsed.brief
         }
 
         MorningBriefFailureCounter.shared.increment()
         print("[brief] first attempt failed JSON parse; retrying with stricter prompt")
 
         let stricter = MorningBriefPrompts.systemPrompt + "\n\n" + MorningBriefPrompts.retryAddendum
-        if let brief = try await attempt(
+        if let parsed = try await attempt(
             orchestrator: orchestrator,
             systemPrompt: stricter,
             userMessage: userMessage,
             generatedAt: now,
             forDate: forDate
         ) {
-            try persist(brief)
-            return brief
+            try persist(parsed)
+            return parsed.brief
         }
 
         MorningBriefFailureCounter.shared.increment()
@@ -104,7 +111,7 @@ final class MorningBriefGenerator {
         userMessage: String,
         generatedAt: Date,
         forDate: Date
-    ) async throws -> MorningBrief? {
+    ) async throws -> MorningBriefPrompts.ParsedBrief? {
         let result = try await orchestrator.send(
             systemPrompt: systemPrompt,
             history: [],
@@ -115,7 +122,8 @@ final class MorningBriefGenerator {
         return MorningBriefPrompts.parse(result.finalText, generatedAt: generatedAt, forDate: forDate)
     }
 
-    private func persist(_ brief: MorningBrief) throws {
+    private func persist(_ parsed: MorningBriefPrompts.ParsedBrief) throws {
+        let brief = parsed.brief
         // Belt-and-suspenders rate-limit enforcement (3.6 risk-3 mitigation): if the LLM
         // returned a goalNudge but the matching Goal was nudged within the last 7 days,
         // strip the nudge from the brief before persistence. The user never sees a
@@ -165,6 +173,25 @@ final class MorningBriefGenerator {
         // Hint to WidgetKit so the desktop widget refreshes promptly rather than
         // waiting for its 15-minute timeline tick.
         WidgetCenter.shared.reloadAllTimelines()
+
+        // Side-write the .today compact memory body extracted from the brief
+        // response. Best-effort: log + skip on failure. The brief itself has
+        // already landed; an absent or malformed compact memory just means the
+        // .today tier doesn't refresh for this brief.
+        if let compactBody = parsed.todayCompactMemory, let generator = compactMemoryGenerator {
+            Task.detached { @MainActor [generator, briefGeneratedAt = sanitizedBrief.generatedAt] in
+                do {
+                    let memory = try await generator.writeTodayFromBrief(
+                        body: compactBody,
+                        generatedAt: briefGeneratedAt
+                    )
+                    print("[compact] .today written from brief (\(memory.wordCount) words)")
+                } catch {
+                    CompactMemoryFailureCounter.shared.increment()
+                    print("[compact] .today write from brief failed: \(error)")
+                }
+            }
+        }
     }
 
     /// Belt-and-suspenders rate limit. If the LLM returned a goalNudge for a goal that

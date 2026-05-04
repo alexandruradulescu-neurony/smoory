@@ -257,6 +257,39 @@ final class HemaService: @unchecked Sendable {
         """, params: params)
     }
 
+    /// Writes a new active compact memory of the given kind and supersedes any
+    /// previously-active row of the same kind in a single transaction. Preserves
+    /// the spec invariant: exactly one row per kind has `superseded_at = NULL`.
+    /// `writeCompactMemory` (above) keeps its INSERT-only semantics for the
+    /// diagnostics self-test path.
+    func replaceActiveCompactMemory(_ memory: CompactMemory) async throws {
+        let now = Date().formatted(.iso8601)
+        try await db.transaction {
+            // Step 1: supersede any existing active row of this kind.
+            try await self.db.execute("""
+                UPDATE compact_memory
+                SET superseded_at = ?
+                WHERE kind = ? AND superseded_at IS NULL
+            """, params: [now, memory.kind.rawValue])
+
+            // Step 2: insert the new row.
+            let insertParams: [any Sendable] = [
+                memory.id.uuidString,
+                memory.kind.rawValue,
+                memory.body,
+                memory.wordCount,
+                memory.generatedAt.formatted(.iso8601),
+                memory.supersededAt?.formatted(.iso8601),
+                memory.generatingModel
+            ]
+            try await self.db.execute("""
+                INSERT INTO compact_memory
+                    (id, kind, body, word_count, generated_at, superseded_at, generating_model)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, params: insertParams)
+        }
+    }
+
     // MARK: - Reads
 
     func readActiveCompactMemories() async throws -> [CompactMemory] {
