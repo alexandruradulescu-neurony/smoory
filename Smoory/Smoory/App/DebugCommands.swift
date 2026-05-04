@@ -211,6 +211,36 @@ struct DebugCommands: Commands {
 
             Divider()
 
+            Button("Dedupe candidates") {
+                let alert = NSAlert()
+                alert.messageText = "Dedupe pending candidates?"
+                alert.informativeText = "Within each (type, normalized content) group, the oldest pending row survives; newer duplicates flip to .rejected with reason \"duplicate of <id> (auto)\". Confirmed, auto-applied, and already-rejected rows are untouched."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Dedupe")
+                alert.addButton(withTitle: "Cancel")
+                guard alert.runModal() == .alertFirstButtonReturn else { return }
+                Task { @MainActor in
+                    do {
+                        let report = try StructuringService.dedupePendingCandidates(in: modelContainer)
+                        for line in report.lines { print(line) }
+                        let result = NSAlert()
+                        result.messageText = "Dedupe candidates complete"
+                        result.informativeText = report.summary
+                        result.alertStyle = .informational
+                        result.addButton(withTitle: "OK")
+                        result.runModal()
+                    } catch {
+                        print("[structuring] Dedupe candidates failed: \(error)")
+                        let fail = NSAlert()
+                        fail.messageText = "Dedupe candidates failed"
+                        fail.informativeText = "\(error)"
+                        fail.alertStyle = .critical
+                        fail.addButton(withTitle: "OK")
+                        fail.runModal()
+                    }
+                }
+            }
+
             Button("Dedupe facts") {
                 guard case .ready(let hema) = hemaState else {
                     print("[hema] Not ready — cannot dedupe.")

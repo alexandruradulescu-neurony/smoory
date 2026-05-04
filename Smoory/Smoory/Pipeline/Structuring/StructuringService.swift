@@ -124,7 +124,29 @@ final class StructuringService {
         extractingModel: String
     ) async {
         let context = ModelContext(modelContainer)
+
+        // Dedup against existing pending candidates: skip incoming whose normalized
+        // (type, content) matches a row already waiting in the Feed. Stops the LLM
+        // re-emitting the same proposal across turns from cluttering review.
+        var seen = Set<String>()
+        let pendingDescriptor = FetchDescriptor<CandidateWrite>(
+            predicate: #Predicate<CandidateWrite> { $0.statusRaw == 0 }
+        )
+        if let existing = try? context.fetch(pendingDescriptor) {
+            for row in existing {
+                seen.insert(Self.dedupeKey(typeRaw: row.typeRaw, content: row.effectiveContent))
+            }
+        }
+
+        var inserted = 0
+        var skipped = 0
         for p in parsed {
+            let key = Self.dedupeKey(typeRaw: p.type.rawValue, content: p.content)
+            if seen.contains(key) {
+                skipped += 1
+                continue
+            }
+            seen.insert(key)
             let row = CandidateWrite()
             row.type = p.type
             row.content = p.content
@@ -137,12 +159,72 @@ final class StructuringService {
             row.extractingModel = extractingModel
             row.status = .pending
             context.insert(row)
+            inserted += 1
         }
         do {
             try context.save()
-            print("[structuring] persisted \(parsed.count) candidate(s)")
+            if skipped > 0 {
+                print("[structuring] persisted \(inserted) candidate(s); skipped \(skipped) duplicate(s)")
+            } else {
+                print("[structuring] persisted \(inserted) candidate(s)")
+            }
         } catch {
             print("[structuring] save failed: \(error)")
         }
+    }
+
+    /// Composite key for candidate dedup. Pairs the type raw value with the same
+    /// body normalization used for hema fact dedup so the two layers agree on what
+    /// "same content" means.
+    static func dedupeKey(typeRaw: Int, content: String) -> String {
+        "\(typeRaw):\(HemaService.normalizeBody(content))"
+    }
+
+    /// Retroactive cleanup of duplicate pending CandidateWrite rows. Within each
+    /// (type, normalized content) group the oldest pending row survives; newer
+    /// duplicates are flipped to .rejected with reason "duplicate of <id> (auto)".
+    /// Confirmed, auto-applied, and previously rejected rows are not touched.
+    @MainActor
+    static func dedupePendingCandidates(in modelContainer: ModelContainer) throws -> CandidateDedupeReport {
+        var lines: [String] = ["---- DEDUPE PENDING CANDIDATES ----"]
+        let context = ModelContext(modelContainer)
+        let descriptor = FetchDescriptor<CandidateWrite>(
+            predicate: #Predicate<CandidateWrite> { $0.statusRaw == 0 }
+        )
+        let pending = try context.fetch(descriptor).sorted { $0.createdAt < $1.createdAt }
+        lines.append("Loaded \(pending.count) pending candidate(s).")
+
+        var canonical: [String: CandidateWrite] = [:]
+        var rejected = 0
+        for cand in pending {
+            let key = dedupeKey(typeRaw: cand.typeRaw, content: cand.effectiveContent)
+            if let keep = canonical[key] {
+                cand.status = .rejected
+                cand.reviewedAt = Date()
+                cand.rejectionReason = "duplicate of \(keep.id) (auto)"
+                rejected += 1
+                lines.append("rejected \(cand.id) → kept \(keep.id) [type=\(cand.typeRaw)]")
+            } else {
+                canonical[key] = cand
+            }
+        }
+        try context.save()
+        let remaining = pending.count - rejected
+        lines.append("---- DONE: rejected \(rejected); \(remaining) pending remain ----")
+        return CandidateDedupeReport(
+            duplicatesRejected: rejected,
+            remainingPending: remaining,
+            lines: lines
+        )
+    }
+}
+
+struct CandidateDedupeReport: Sendable {
+    let duplicatesRejected: Int
+    let remainingPending: Int
+    let lines: [String]
+
+    var summary: String {
+        "Rejected \(duplicatesRejected) duplicate candidate(s). \(remainingPending) pending remain."
     }
 }
