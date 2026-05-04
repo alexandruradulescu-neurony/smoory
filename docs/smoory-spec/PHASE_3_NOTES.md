@@ -73,3 +73,25 @@ The day-review session opens with a randomly-picked line from a small static set
 **When to revisit:** if users (the dev) report the opener feels generic or fails to draw out reflection, schedule a "review opener generator" milestone that wires `claude-sonnet-4-6` (or active provider's heavy tier) into `DayReviewViewModel.startIfNeeded()` with the inputs listed in AI_PROMPTS.md §5. The static-set call site is `DayReviewPrompts.randomOpener()` — single-call replacement.
 
 ---
+
+## Cosmetic patch from milestone 4.0 — `<current_datetime>` timezone format
+
+**Captured during milestone 4.0 (2026-05-04).**
+
+The `<current_datetime>` block assembled by `Orchestrator.assemblePrompt()` currently formats the timezone as an abbreviation (e.g., `EEST`) plus the IANA identifier in parentheses (`Europe/Bucharest`). Runtime example:
+
+```
+<current_datetime>
+Today is Monday, May 4, 2026. Local time is 18:16 EEST (Europe/Bucharest). Resolve relative dates ("today", "tomorrow", "next Monday") and relative times ("in an hour", "tonight") against this.
+</current_datetime>
+```
+
+LLMs sometimes misread three- and four-letter timezone abbreviations (`EEST`, `EDT`, `BST`, etc.) — they're ambiguous (e.g., `BST` could be British Summer Time or Bangladesh Standard Time) and the model may infer the wrong UTC offset.
+
+**Consider switching** to a UTC-offset form: `Monday, 2026-05-04 18:16 UTC+03:00 (Bucharest)`. UTC offsets are unambiguous and easier for the model to arithmetic on.
+
+**Why deferred:** cosmetic, not urgent. The 4.0 milestone explicitly preserved the existing format because the time-reasoning rules read fine with weekday + full date + local time + abbreviation, and changing the format would have invalidated the test scenarios run in 4.0.
+
+**Where to change when picked up:** `Orchestrator.assemblePrompt()` (currently `Smoory/Smoory/Pipeline/Orchestrator.swift` ~line 221). Replace the `dateString` / `timeString` / `tzAbbrev` formatters with a single ISO-style date + 24h time + `UTC±HH:MM` offset, drop the IANA identifier or move it to a parenthetical city name. After change, re-run the 4.0 voice/time scenarios to confirm the new format doesn't regress time reasoning.
+
+---
