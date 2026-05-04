@@ -77,23 +77,28 @@ enum WriteMemoryFactTool: Tool {
             isPrivate: input.is_private ?? false
         )
 
-        try await context.services.hema.writeFact(fact)
+        // writeFact may return an existing id when dedup detects a near-duplicate;
+        // record that id (not the locally-minted `fact.id`) so audit trails point to
+        // the row that actually exists.
+        let writtenID = try await context.services.hema.writeFact(fact)
 
         // Surface silent writes in Feed as auto-applied rows so the user has an audit
         // trail without an interruption (per MEMORY.md "transparency" requirement).
         await Self.recordAutoAppliedCandidate(
             fact: fact,
+            writtenID: writtenID,
             modelContainer: context.services.modelContainer,
             chatSessionID: context.chatSessionID
         )
 
-        let json = #"{"status":"written","id":"\#(fact.id.uuidString)"}"#
+        let json = #"{"status":"written","id":"\#(writtenID.uuidString)"}"#
         return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
     }
 
     @MainActor
     private static func recordAutoAppliedCandidate(
         fact: SemanticFact,
+        writtenID: UUID,
         modelContainer: ModelContainer,
         chatSessionID: UUID
     ) {
@@ -104,7 +109,7 @@ enum WriteMemoryFactTool: Tool {
         row.status = .autoApplied
         row.sourceSessionID = chatSessionID
         row.reviewedAt = Date()
-        row.resultEntityID = fact.id
+        row.resultEntityID = writtenID
         row.extractingModel = AIProviderStore.current().modelID(for: .balanced)
 
         let context = ModelContext(modelContainer)

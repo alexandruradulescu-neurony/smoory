@@ -319,6 +319,152 @@ extension HemaService {
         return SelfTestReport(passed: written == seeds.count, lines: lines)
     }
 
+    /// Two-pass deduplication of semantic_facts. Pass 1 removes exact normalized-body
+    /// duplicates; pass 2 clusters survivors by cosine similarity ≥ 0.95 using
+    /// fresh embeddings via the configured embedder. Within each duplicate group the
+    /// canonical fact is kept (user_confirmed > confidence > earliest created_at >
+    /// smallest id) and the rest are deleted from both `semantic_facts` and the vec table.
+    /// Not safe to call concurrently with writes; treat as single-call from the debug menu.
+    func dedupeFacts() async throws -> DedupeReport {
+        var lines: [String] = ["---- HEMA DEDUPE FACTS ----"]
+
+        // Pull all non-superseded facts including private ones — dedup must consider every row.
+        let filter = FactFilter(
+            tags: nil, entities: nil,
+            includeExpired: true,
+            includeSuperseded: false,
+            includePrivate: true,
+            minConfidence: nil,
+            createdSince: nil, createdBefore: nil
+        )
+        let allFacts = try await readAllFacts(filter: filter, limit: 100_000, offset: 0)
+        lines.append("Loaded \(allFacts.count) non-superseded fact(s).")
+
+        // Pass 1: exact normalized-body groups.
+        var groups: [String: [SemanticFact]] = [:]
+        for fact in allFacts {
+            groups[Self.normalizeBody(fact.body), default: []].append(fact)
+        }
+        var exactRemoved = 0
+        var survivors: [SemanticFact] = []
+        for (_, bucket) in groups {
+            if bucket.count == 1 {
+                survivors.append(bucket[0])
+                continue
+            }
+            guard let canonical = Self.pickCanonicalFact(among: bucket) else {
+                survivors.append(contentsOf: bucket)
+                continue
+            }
+            survivors.append(canonical)
+            for fact in bucket where fact.id != canonical.id {
+                do {
+                    try await deleteFact(id: fact.id)
+                    exactRemoved += 1
+                } catch {
+                    lines.append("WARN: deleteFact \(fact.id) failed in exact pass — \(error)")
+                }
+            }
+        }
+        lines.append("Pass 1 (exact body): removed \(exactRemoved) dupe(s); \(survivors.count) survivor(s).")
+
+        // Pass 2: semantic near-duplicates. Re-embed survivor bodies in batch via the
+        // configured embedder, then cluster pairwise by cosine ≥ threshold. No-op when
+        // the embedder is unavailable (degraded mode).
+        var semanticRemoved = 0
+        if let vectors = try? await embedSurvivors(survivors), vectors.count == survivors.count {
+            let threshold = Self.dedupCosineSimilarityThreshold
+            var deleted: Set<UUID> = []
+            // Iterate by canonical strength so the first-claimed fact in each cluster
+            // is the strongest candidate; weaker peers fall in as dupes.
+            let order = survivors.indices.sorted { i, j in
+                Self.isStronger(survivors[i], than: survivors[j])
+            }
+            for idxA in order {
+                let factA = survivors[idxA]
+                if deleted.contains(factA.id) { continue }
+                for idxB in order where idxB != idxA {
+                    let factB = survivors[idxB]
+                    if deleted.contains(factB.id) { continue }
+                    // Already removed in pass 1 means body strings differ here, so we're
+                    // looking at paraphrases. Compute cosine similarity between vectors.
+                    let sim = Self.cosineSimilarity(vectors[idxA], vectors[idxB])
+                    if sim >= threshold {
+                        // factA is the stronger one (sort order). Delete factB.
+                        do {
+                            try await deleteFact(id: factB.id)
+                            deleted.insert(factB.id)
+                            semanticRemoved += 1
+                            lines.append("merged [sim=\(String(format: "%.3f", sim))]: kept \(factA.id), removed \(factB.id)")
+                        } catch {
+                            lines.append("WARN: deleteFact \(factB.id) failed in semantic pass — \(error)")
+                        }
+                    }
+                }
+            }
+        } else {
+            lines.append("Pass 2 (semantic): skipped — embedder unavailable or returned mismatched count.")
+        }
+        lines.append("Pass 2 (semantic): removed \(semanticRemoved) near-dupe(s).")
+
+        let countRows = try await db.query(
+            "SELECT COUNT(*) AS c FROM semantic_facts WHERE superseded_by IS NULL"
+        )
+        let remaining = (countRows.first?["c"] as? Int) ?? 0
+        lines.append("Remaining non-superseded facts: \(remaining).")
+        lines.append("---- DEDUPE COMPLETE ----")
+
+        return DedupeReport(
+            exactRemoved: exactRemoved,
+            semanticRemoved: semanticRemoved,
+            remainingFacts: remaining,
+            lines: lines
+        )
+    }
+
+    /// Canonical strength comparator for duplicate clusters. Mirror of pickCanonicalFact.
+    private static func isStronger(_ a: SemanticFact, than b: SemanticFact) -> Bool {
+        if a.userConfirmed != b.userConfirmed { return a.userConfirmed }
+        if a.confidence != b.confidence { return a.confidence > b.confidence }
+        if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+        return a.id.uuidString < b.id.uuidString
+    }
+
+    /// Re-embed survivor bodies in batches sized to fit a Voyage call comfortably.
+    /// Returns vectors aligned to `survivors`, or throws if embedding fails.
+    private func embedSurvivors(_ survivors: [SemanticFact]) async throws -> [[Float]] {
+        guard !survivors.isEmpty else { return [] }
+        guard let embedder = self.embedder else {
+            throw EmbedderError.missingAPIKey
+        }
+        let batchSize = 96
+        var out: [[Float]] = []
+        out.reserveCapacity(survivors.count)
+        var index = 0
+        while index < survivors.count {
+            let end = min(index + batchSize, survivors.count)
+            let batch = survivors[index..<end].map { $0.body }
+            let vectors = try await embedder.embed(Array(batch))
+            guard vectors.count == batch.count else {
+                throw EmbedderError.unexpectedDimension(expected: embedder.dimension, got: vectors.count)
+            }
+            out.append(contentsOf: vectors)
+            index = end
+        }
+        return out
+    }
+
+    /// Cosine similarity for two same-length unit-normalized vectors. Voyage embeddings
+    /// arrive normalized so this is the dot product; no need to divide by norms.
+    private static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Double {
+        guard a.count == b.count else { return 0 }
+        var dot: Double = 0
+        for i in 0..<a.count {
+            dot += Double(a[i]) * Double(b[i])
+        }
+        return dot
+    }
+
     /// Dev escape hatch — closes connection, deletes the DB file, reopens, applies migrations.
     /// Not safe to call concurrently with reads/writes; treat as single-call from a dev menu.
     func reset() async throws {

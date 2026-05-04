@@ -7,7 +7,7 @@ final class HemaService: @unchecked Sendable {
 
     let databaseURL: URL
     var db: Database          // non-private so HemaService+Diagnostics can access during ops
-    private let embedder: Embedder?
+    let embedder: Embedder?   // non-private so HemaService+Diagnostics can re-embed for dedupe
 
     /// Async because opening the DB and running migrations can throw and suspend.
     /// Throws on first-run DB-init failure — hema is essential, no graceful fallback.
@@ -67,7 +67,11 @@ final class HemaService: @unchecked Sendable {
         }
     }
 
-    func writeFact(_ fact: SemanticFact) async throws {
+    /// Writes a fact with insert-time dedup. Returns the id of the surviving row:
+    /// either `fact.id` (newly inserted) or the existing duplicate's id (skipped insert).
+    /// Callers should record the returned id, not `fact.id`, when storing audit references.
+    @discardableResult
+    func writeFact(_ fact: SemanticFact) async throws -> UUID {
         let tagsJSON = try Self.encodeJSON(fact.tags)
         let entitiesJSON = try Self.encodeJSON(fact.entitiesReferenced)
 
@@ -79,6 +83,21 @@ final class HemaService: @unchecked Sendable {
                 print("[hema] embed failed for fact \(fact.id) — storing without vector: \(error)")
                 vector = nil
             }
+        }
+
+        // Dedup pre-check. If a non-superseded fact already covers this content
+        // (exact normalized body OR cosine sim ≥ 0.95), skip the INSERT and return
+        // its id. Optionally upgrade metadata when the new write is "stronger".
+        if let dupID = try await findDuplicateFact(body: fact.body, embedding: vector) {
+            if fact.userConfirmed {
+                try await db.execute("""
+                    UPDATE semantic_facts
+                    SET user_confirmed = 1,
+                        confidence = MAX(confidence, ?)
+                    WHERE id = ?
+                """, params: [fact.confidence, dupID.uuidString])
+            }
+            return dupID
         }
 
         let params: [any Sendable] = [
@@ -107,6 +126,118 @@ final class HemaService: @unchecked Sendable {
                 INSERT INTO semantic_facts_vec (rowid, embedding) VALUES (?, ?)
             """, params: [rowid, vector])
         }
+        return fact.id
+    }
+
+    // MARK: - Dedup
+
+    /// Cosine similarity at or above this counts as a semantic near-duplicate.
+    static let dedupCosineSimilarityThreshold: Double = 0.95
+
+    /// L2 distance threshold equivalent to the cosine threshold above, for unit-normalized
+    /// Voyage embeddings. Derivation: ||a-b||² = 2 - 2·cos  ⇒  L2 ≤ √(2·(1 - cos)).
+    static var dedupL2DistanceThreshold: Double {
+        (2.0 * (1.0 - dedupCosineSimilarityThreshold)).squareRoot()
+    }
+
+    /// Body normalization for exact-match dedup: trim, unicode-lowercase, collapse
+    /// runs of whitespace to a single space.
+    static func normalizeBody(_ body: String) -> String {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.localizedLowercase
+        return lowered.replacingOccurrences(
+            of: "\\s+",
+            with: " ",
+            options: .regularExpression
+        )
+    }
+
+    /// Returns the surviving id of a non-superseded fact that should be considered a
+    /// duplicate of (`body`, `embedding`), or nil if no match. Two-step: exact normalized
+    /// body match first (cheap), then nearest-neighbor in semantic_facts_vec (skipped if
+    /// embedding is nil).
+    func findDuplicateFact(body: String, embedding: [Float]?) async throws -> UUID? {
+        let target = Self.normalizeBody(body)
+
+        // Step 1: exact normalized-body match. Fetch in Swift to keep unicode-correct
+        // case folding rather than relying on SQLite's ASCII-only LOWER().
+        let rows = try await db.query("""
+            SELECT id, body, user_confirmed, confidence, created_at
+            FROM semantic_facts
+            WHERE superseded_by IS NULL
+        """)
+        var candidates: [(id: UUID, userConfirmed: Bool, confidence: Double, createdAt: Date)] = []
+        for row in rows {
+            guard
+                let stored = row["body"] as? String,
+                Self.normalizeBody(stored) == target,
+                let idStr = row["id"] as? String, let id = UUID(uuidString: idStr),
+                let createdAtStr = row["created_at"] as? String,
+                let createdAt = Self.parseISO8601Date(createdAtStr)
+            else { continue }
+            let confirmed = ((row["user_confirmed"] as? Int) ?? 0) != 0
+            let conf = (row["confidence"] as? Double) ?? 0
+            candidates.append((id, confirmed, conf, createdAt))
+        }
+        if let canonical = Self.pickCanonicalID(among: candidates) {
+            return canonical
+        }
+
+        // Step 2: semantic near-match via vec0 nearest neighbor. Only runs when we have
+        // an embedding to query with — degraded (no embedder) callers fall through.
+        guard let embedding else { return nil }
+        let l2Threshold = Self.dedupL2DistanceThreshold
+        let nearest = try await db.query("""
+            SELECT f.id, sub.distance
+            FROM (
+                SELECT rowid, distance
+                FROM semantic_facts_vec
+                WHERE embedding MATCH ?
+                ORDER BY distance
+                LIMIT 1
+            ) sub
+            JOIN semantic_facts f ON sub.rowid = f.rowid
+            WHERE f.superseded_by IS NULL
+        """, params: [embedding])
+        guard
+            let row = nearest.first,
+            let distance = row["distance"] as? Double, distance <= l2Threshold,
+            let idStr = row["id"] as? String, let id = UUID(uuidString: idStr)
+        else { return nil }
+        return id
+    }
+
+    /// Canonical pick rule for a duplicate group:
+    /// 1. user_confirmed = true beats false
+    /// 2. higher confidence
+    /// 3. earlier created_at (preserve original provenance)
+    /// 4. lexicographically smallest id (deterministic tie-break)
+    static func pickCanonicalID(
+        among facts: [(id: UUID, userConfirmed: Bool, confidence: Double, createdAt: Date)]
+    ) -> UUID? {
+        facts.sorted { a, b in
+            if a.userConfirmed != b.userConfirmed { return a.userConfirmed && !b.userConfirmed }
+            if a.confidence != b.confidence { return a.confidence > b.confidence }
+            if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+            return a.id.uuidString < b.id.uuidString
+        }.first?.id
+    }
+
+    /// Same canonical rule but operating on full SemanticFact values — used by the
+    /// diagnostics dedupe pass which needs to know which fact survives, not just the id.
+    static func pickCanonicalFact(among facts: [SemanticFact]) -> SemanticFact? {
+        facts.sorted { a, b in
+            if a.userConfirmed != b.userConfirmed { return a.userConfirmed && !b.userConfirmed }
+            if a.confidence != b.confidence { return a.confidence > b.confidence }
+            if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+            return a.id.uuidString < b.id.uuidString
+        }.first
+    }
+
+    /// Internal alias for the private parseISO8601 helper, exposed at fileprivate
+    /// scope so dedup helpers in the same class can reuse the same parser.
+    fileprivate static func parseISO8601Date(_ string: String?) -> Date? {
+        parseISO8601(string)
     }
 
     func writeCompactMemory(_ memory: CompactMemory) async throws {

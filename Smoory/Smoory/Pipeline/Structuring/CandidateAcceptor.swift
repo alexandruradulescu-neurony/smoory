@@ -79,8 +79,9 @@ enum CandidateAcceptor {
                 vector: nil,
                 isPrivate: false
             )
-            try await hema.writeFact(fact)
-            stored.resultEntityID = fact.id
+            // writeFact returns the surviving id — may differ from fact.id when dedup
+            // matched an existing row. Use it for the audit reference.
+            stored.resultEntityID = try await hema.writeFact(fact)
 
         case .toneObservation:
             // Stopgap (see PHASE_4_NOTES.md): tag-as-tone fact until ToneProfile flow lands.
@@ -101,8 +102,7 @@ enum CandidateAcceptor {
                 vector: nil,
                 isPrivate: false
             )
-            try await hema.writeFact(fact)
-            stored.resultEntityID = fact.id
+            stored.resultEntityID = try await hema.writeFact(fact)
 
         case .fact:
             let fact = SemanticFact(
@@ -122,8 +122,7 @@ enum CandidateAcceptor {
                 vector: nil,
                 isPrivate: false
             )
-            try await hema.writeFact(fact)
-            stored.resultEntityID = fact.id
+            stored.resultEntityID = try await hema.writeFact(fact)
         }
 
         stored.status = .confirmed

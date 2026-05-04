@@ -211,6 +211,44 @@ struct DebugCommands: Commands {
 
             Divider()
 
+            Button("Dedupe facts") {
+                guard case .ready(let hema) = hemaState else {
+                    print("[hema] Not ready — cannot dedupe.")
+                    return
+                }
+                let alert = NSAlert()
+                alert.messageText = "Dedupe facts?"
+                alert.informativeText = "Merges duplicate facts in hema. Within each duplicate group the surviving fact is the one with user_confirmed = true, then highest confidence, then earliest created_at. The rest are deleted from semantic_facts and the vector index. Continue?"
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Dedupe")
+                alert.addButton(withTitle: "Cancel")
+                guard alert.runModal() == .alertFirstButtonReturn else { return }
+                Task {
+                    do {
+                        let report = try await hema.dedupeFacts()
+                        for line in report.lines { print(line) }
+                        await MainActor.run {
+                            let result = NSAlert()
+                            result.messageText = "Dedupe complete"
+                            result.informativeText = report.summary
+                            result.alertStyle = .informational
+                            result.addButton(withTitle: "OK")
+                            result.runModal()
+                        }
+                    } catch {
+                        print("[hema] Dedupe failed: \(error)")
+                        await MainActor.run {
+                            let fail = NSAlert()
+                            fail.messageText = "Dedupe failed"
+                            fail.informativeText = "\(error)"
+                            fail.alertStyle = .critical
+                            fail.addButton(withTitle: "OK")
+                            fail.runModal()
+                        }
+                    }
+                }
+            }
+
             Button("Reset hema") {
                 guard case .ready(let hema) = hemaState else {
                     print("[hema] Not ready — cannot reset.")

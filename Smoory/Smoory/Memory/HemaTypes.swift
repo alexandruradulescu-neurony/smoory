@@ -67,6 +67,17 @@ struct SelfTestReport: Sendable {
     let lines: [String]
 }
 
+struct DedupeReport: Sendable {
+    let exactRemoved: Int
+    let semanticRemoved: Int
+    let remainingFacts: Int
+    let lines: [String]
+
+    var summary: String {
+        "Removed \(exactRemoved) exact dupe(s), \(semanticRemoved) semantic near-dupe(s). \(remainingFacts) fact(s) remain."
+    }
+}
+
 enum HemaState: Sendable {
     case loading
     case ready(HemaService)
