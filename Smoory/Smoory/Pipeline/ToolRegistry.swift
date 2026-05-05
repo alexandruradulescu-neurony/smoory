@@ -30,6 +30,7 @@ enum ToolRegistry {
         ReorderListItemsTool.self,
         UpdateListItemTool.self,
         GetOffPeriodsTool.self,
+        CompleteEndOfDayTool.self,
     ]
 
     static func tool(named name: String) -> (any Tool.Type)? {

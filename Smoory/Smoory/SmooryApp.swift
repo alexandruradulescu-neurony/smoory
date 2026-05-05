@@ -28,6 +28,7 @@ struct SmooryApp: App {
     @State private var notificationDelegate = NotificationDelegate()
     @State private var pendingDayReview = PendingDayReviewState()
     @State private var pendingWeekReview = PendingWeekReviewState()
+    @State private var pendingEndOfDay = PendingEndOfDayState()
     @State private var firedReminderQueue = FiredReminderQueue()
     @State private var navigationState = NavigationState()
     @State private var morningBriefDispatcher: MorningBriefDispatcher?
@@ -108,11 +109,16 @@ struct SmooryApp: App {
                     .environment(\.navigationState, navigationState)
                     .environment(\.remindersSyncService, remindersSyncService)
                     .sheet(isPresented: Binding(
-                        get: { pendingDayReview.actionToPresent != nil || pendingWeekReview.actionToPresent != nil },
+                        get: {
+                            pendingDayReview.actionToPresent != nil
+                                || pendingWeekReview.actionToPresent != nil
+                                || pendingEndOfDay.actionToPresent != nil
+                        },
                         set: { newValue in
                             if !newValue {
                                 pendingDayReview.actionToPresent = nil
                                 pendingWeekReview.actionToPresent = nil
+                                pendingEndOfDay.actionToPresent = nil
                             }
                         }
                     )) {
@@ -244,6 +250,7 @@ struct SmooryApp: App {
                     service: svc,
                     pendingDayReview: pendingDayReview,
                     pendingWeekReview: pendingWeekReview,
+                    pendingEndOfDay: pendingEndOfDay,
                     firedReminderQueue: firedReminderQueue,
                     navigationState: navigationState,
                     morningBriefDispatcher: dispatcher
@@ -341,6 +348,20 @@ struct SmooryApp: App {
                     compactMemoryGenerator: compactMemoryGenerator
                 ),
                 dismiss: { pendingWeekReview.actionToPresent = nil }
+            )
+        } else if let endAction = pendingEndOfDay.actionToPresent,
+                  case .ready(let hema) = hemaState,
+                  let svc = scheduledActionService {
+            EndOfDaySheet(
+                viewModel: EndOfDayViewModel(
+                    action: endAction,
+                    modelContainer: sharedModelContainer,
+                    hema: hema,
+                    scheduledActionService: svc,
+                    batchedFactExtractor: batchedFactExtractor,
+                    factRestructurer: factRestructurer
+                ),
+                dismiss: { pendingEndOfDay.actionToPresent = nil }
             )
         }
     }

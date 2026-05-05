@@ -87,6 +87,7 @@ enum GetMyScheduledActionsTool: Tool {
         case .weekReview:   return "week_review"
         case .goalNudge:    return "goal_nudge"
         case .userReminder: return "reminder"
+        case .endOfDay:     return "end_of_day"
         }
     }
 

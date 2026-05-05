@@ -688,4 +688,44 @@ Per CLAUDE.md SwiftData rules: relations optional, no `@Attribute(.unique)`, def
 
 ---
 
+## 4.10 — End-of-day shutdown ritual (2026-05-04)
+
+**Decision:** Add a separate "end-of-day" review session distinct from the existing day review. Day review is reflective (what stood out, themes, mood); end-of-day is operational (what's left undone, tomorrow first-thing, tie up loose ends). Pairs with the existing morning-brief→day-review arc to bracket the day on both ends.
+
+**Why distinct from day review:** Conflating them produces sessions that are too long for either purpose and tonally muddled. End-of-day fires later (~22:30 default), runs 3–5 turns instead of 4–8, focuses on actionable defer/capture rather than reflection, and ends on a quieter "lights out" note.
+
+**Schedule integration:** New `ScheduledActionKind.endOfDay` (raw 5). Settings → "End of day" section follows the existing day-review section pattern (toggle + time picker). `ScheduledActionService` already handles polling, fire-on-due, and deferral for any kind, so the new case threads through unchanged.
+
+**Tools available during the session:**
+- `get_open_todos`, `get_calendar_window` — read what's open today + tomorrow's first events.
+- `defer_todo`, `update_todo`, `complete_todo` — tie up loose ends on today's incomplete items.
+- `create_todo` — capture for tomorrow.
+- `write_memory_fact` — only durable observations the user states (rare in this surface).
+- `complete_end_of_day` (new) — closes the session, persists a 1–2 sentence summary as a memory turn so it shows up in retrieval the next morning.
+
+**Restricted:** no `create_scheduled_action` during end-of-day (mirrors the day-review restriction — schedule edits happen in main chat to avoid the user fiddling with their schedule while winding down).
+
+**Conversation arc** (3–5 turns):
+1. Acknowledge: "How are you closing out?" (LLM-generated, seeded with today's open-todo count + tomorrow's first calendar event).
+2. Loose ends: "Anything you wanted to do today that didn't happen?" — defer or capture.
+3. Tomorrow first thing: "First thing tomorrow is [meeting]. Anything to prep?" — optional create_todo / capture note.
+4. Optional gratitude / single-sentence note.
+5. Wrap: "Sleep well." → call `complete_end_of_day`.
+
+**Voice:** Same anti-emoji / anti-exclamation / no-performative-warmth rules as day review (4.0). Slightly more declarative — fewer questions, more affirmations. Session is winding down, not opening up.
+
+**UI:** New `EndOfDayView` sheet, presented from notification tap or Debug-menu trigger. Shell mirrors `DayReviewView` for consistency.
+
+**Out of scope for 4.10:**
+- Voice input (lands in 4.11 across reviews).
+- Streak/how-many-days-in-a-row analytics.
+- Wind-down music / screen-dim hooks.
+- Tomorrow-brief auto-trigger (morning brief already has its own schedule).
+- LLM-generated opener that pulls richer context (parity with the deferred day-review opener — when that lands, end-of-day adopts the same path).
+- Insights generation (week review owns long-arc patterns).
+
+**Sequencing when both fire same evening:** Day review fires at its scheduled time (reflective), end-of-day later (operational). No interlock — user can defer either. Documented expectation: day review at ~21:00, end-of-day at ~22:30.
+
+---
+
 End of spec. Time to build.

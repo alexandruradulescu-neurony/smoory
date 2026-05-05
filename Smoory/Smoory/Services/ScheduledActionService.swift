@@ -405,6 +405,7 @@ final class ScheduledActionService {
         case .weekReview:   return "Sunday — week review?"
         case .goalNudge:    return "Goal check-in"
         case .userReminder: return "Reminder"
+        case .endOfDay:     return "Closing out — anything left from today?"
         }
     }
 }

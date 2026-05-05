@@ -8,6 +8,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     private weak var service: ScheduledActionService?
     private weak var pendingDayReview: PendingDayReviewState?
     private weak var pendingWeekReview: PendingWeekReviewState?
+    private weak var pendingEndOfDay: PendingEndOfDayState?
     private weak var firedReminderQueue: FiredReminderQueue?
     private weak var navigationState: NavigationState?
     private weak var morningBriefDispatcher: MorningBriefDispatcher?
@@ -16,6 +17,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         service: ScheduledActionService,
         pendingDayReview: PendingDayReviewState,
         pendingWeekReview: PendingWeekReviewState,
+        pendingEndOfDay: PendingEndOfDayState,
         firedReminderQueue: FiredReminderQueue,
         navigationState: NavigationState,
         morningBriefDispatcher: MorningBriefDispatcher
@@ -23,6 +25,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         self.service = service
         self.pendingDayReview = pendingDayReview
         self.pendingWeekReview = pendingWeekReview
+        self.pendingEndOfDay = pendingEndOfDay
         self.firedReminderQueue = firedReminderQueue
         self.navigationState = navigationState
         self.morningBriefDispatcher = morningBriefDispatcher
@@ -155,6 +158,14 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
             }
             pending.actionToPresent = row
             print("[notif] presenting week review for \(id)")
+
+        case .endOfDay:
+            guard let pending = pendingEndOfDay else {
+                print("[notif] endOfDay tapped but PendingEndOfDayState not attached")
+                return
+            }
+            pending.actionToPresent = row
+            print("[notif] presenting end of day for \(id)")
 
         case .goalNudge:
             print("[notif] kind=\(row.kind) tapped — no consumer wired yet for this kind")

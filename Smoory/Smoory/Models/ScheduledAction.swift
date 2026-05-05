@@ -70,6 +70,10 @@ enum ScheduledActionKind: Int, Codable, Sendable, CaseIterable {
     case weekReview = 2
     case goalNudge = 3
     case userReminder = 4
+    /// 4.10 — end-of-day shutdown ritual. Operational counterpart to dayReview:
+    /// fires later in the evening, focuses on tomorrow prep + clearing loose
+    /// ends rather than reflective recall.
+    case endOfDay = 5
 
     var stringValue: String {
         switch self {
@@ -78,6 +82,7 @@ enum ScheduledActionKind: Int, Codable, Sendable, CaseIterable {
         case .weekReview: "weekReview"
         case .goalNudge: "goalNudge"
         case .userReminder: "userReminder"
+        case .endOfDay: "endOfDay"
         }
     }
 }
