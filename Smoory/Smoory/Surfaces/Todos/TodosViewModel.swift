@@ -21,12 +21,21 @@ final class TodosViewModel {
 
     /// Top-level UserListItems for the active status filter, search-filtered, grouped
     /// by DueDateGroup. Subtasks are NOT included in the flat list — they appear under
-    /// their parent on expansion. 4.8c — backing entity is `UserListItem` with the
-    /// "todo-shaped" filter (any item with a due date, priority, role, project, or
-    /// thread anchor) so plain shopping/reading list rows don't pollute the Todos view.
+    /// their parent on expansion. 4.8c — backing entity is `UserListItem` with a
+    /// "todo-shaped" filter so plain shopping/reading list rows don't pollute the
+    /// Todos view. Bug-fix follow-up: items in the auto-managed "Todos" UserList
+    /// always count as todos even when none of dueDate/priority/role/project/thread
+    /// is set, which is the common case for chat-quickadd ("add todo X" with no
+    /// extras) and EK-imported reminders that don't carry priority.
     func groupedTodos(from allItems: [UserListItem]) -> [(DueDateGroup, [UserListItem])] {
         let topLevel = allItems.filter { item in
             guard item.parentItem == nil, matchesFilter(item) else { return false }
+            // Items inside the auto-Todos list always show up here (any item the user
+            // / chat asked to "add as a todo" lands there). Items in other lists are
+            // included only when they have an explicit todo signal.
+            if item.list?.title == TodoToolUtils.defaultTodosListTitle {
+                return true
+            }
             return item.dueDate != nil
                 || item.priority > 0
                 || item.role != nil

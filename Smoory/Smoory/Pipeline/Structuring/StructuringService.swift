@@ -125,13 +125,23 @@ final class StructuringService {
         let context = ModelContext(modelContainer)
 
         // Dedup against existing pending candidates: skip incoming whose normalized
-        // (type, content) matches a row already waiting in the Feed. Stops the LLM
-        // re-emitting the same proposal across turns from cluttering review.
+        // (type, content) matches a row already waiting in the Feed OR previously
+        // rejected. Stops the LLM re-emitting the same proposal across turns and
+        // — critically — stops a candidate the user already said no to from
+        // resurfacing every time the structuring layer hears similar phrasing.
+        // Confirmed / auto-applied rows are NOT in the seen set: those represent
+        // information that's already been applied, and a fresh user statement of
+        // similar content might warrant a refinement candidate (handled by the
+        // restructurer, not the structuring layer).
         var seen = Set<String>()
-        let pendingDescriptor = FetchDescriptor<CandidateWrite>(
-            predicate: #Predicate<CandidateWrite> { $0.statusRaw == 0 }
+        let blockingStatusRaws: [Int] = [
+            CandidateStatus.pending.rawValue,
+            CandidateStatus.rejected.rawValue
+        ]
+        let blockingDescriptor = FetchDescriptor<CandidateWrite>(
+            predicate: #Predicate<CandidateWrite> { blockingStatusRaws.contains($0.statusRaw) }
         )
-        if let existing = try? context.fetch(pendingDescriptor) {
+        if let existing = try? context.fetch(blockingDescriptor) {
             for row in existing {
                 seen.insert(Self.dedupeKey(typeRaw: row.typeRaw, content: row.effectiveContent))
             }

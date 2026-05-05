@@ -76,9 +76,11 @@ struct OffPeriodProposalGenerator {
         }
     }
 
-    /// Builds the FeedItem payload for a single todo-conflict card. Uses payloadJSON
-    /// as the audit blob so future Feed renderers can resolve back to the OffPeriod
-    /// and the todo without renegotiating the schema.
+    /// Builds the FeedItem payload for a single todo-conflict card. Attaches a
+    /// `defer_todo` ProposedAction so the card is actionable — the FeedView card
+    /// renderer wires up confirm to fire the action through the orchestrator. The
+    /// proposed new due date is the day after the off-period ends; the user can
+    /// edit the date in the confirmation card before confirming.
     private static func buildTodoConflictFeedItem(off: OffPeriod, item: UserListItem) -> FeedItem {
         let feed = FeedItem()
         feed.kind = .offPeriodConflict
@@ -89,6 +91,28 @@ struct OffPeriodProposalGenerator {
         let dueLabel = ConflictDueDateLabel.format(item.dueDate ?? Date())
         let endLabel = ConflictDueDateLabel.format(off.endDate)
         feed.body = "Due \(dueLabel) — overlaps your time off through \(endLabel)."
+
+        // Day-after-end as the proposed new due date. Calendar arithmetic with
+        // start-of-day alignment so the resulting Date is unambiguous regardless
+        // of the original due time.
+        let cal = Calendar.current
+        let proposedDue = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: off.endDate)) ?? off.endDate
+        let actionParams: [String: String] = [
+            "todo_id": item.id.uuidString,
+            "new_due_date": proposedDue.formatted(.iso8601),
+            "reason": "off period \(off.kind.displayLabel.lowercased())"
+        ]
+        let actionJSON = (try? JSONSerialization.data(withJSONObject: actionParams, options: [.sortedKeys]))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        feed.proposedActions = [
+            ProposedAction(
+                toolName: "defer_todo",
+                parametersJSON: actionJSON,
+                confirmationTier: .tier1Quick,
+                preview: "Defer to \(ConflictDueDateLabel.format(proposedDue))"
+            )
+        ]
+
         feed.payloadJSON = Self.encodePayload(off: off, item: item)
         let now = Date()
         feed.createdAt = now

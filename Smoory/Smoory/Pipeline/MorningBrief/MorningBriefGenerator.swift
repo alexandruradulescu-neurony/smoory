@@ -62,9 +62,14 @@ final class MorningBriefGenerator {
         // Per 3.4 risk-2 mitigation: brief generator gets headroom (8 rounds) for
         // calendar + todos + goals + retrieve_memory + any follow-ups, while the
         // global default stays at 5 to keep main chat tight.
+        // Bug-fix follow-up: pass only the read-only tools the brief actually
+        // needs. The pre-fix code passed `ToolRegistry.allTools`, which exposes
+        // silent write tools (write_memory_fact, complete_list_item, etc.) — a
+        // hallucinated tool call from the brief LLM could mutate state during
+        // generation. Whitelisted set keeps the surface read-only.
         let orchestrator = Orchestrator(
             client: client,
-            registry: ToolRegistry.allTools,
+            registry: ToolRegistry.readOnlyToolsForReviews(),
             services: services,
             chatSessionID: UUID(),
             maxToolCallRounds: 8

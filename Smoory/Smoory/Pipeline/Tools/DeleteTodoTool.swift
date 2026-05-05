@@ -33,6 +33,14 @@ enum DeleteTodoTool: Tool {
         guard let uuid = UUID(uuidString: input.todo_id) else {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.todoNotFound.errorDescription ?? "")
         }
+        // Bug-fix follow-up: delete the paired EK reminders BEFORE the soft-archive
+        // lands. Reconcile alone won't remove them — archived items previously stayed
+        // visible in Reminders.app because the sync engine wasn't told the archive was
+        // a deletion intent.
+        let ekIDs = Self.collectEventKitIdentifiers(todoID: uuid, modelContainer: context.services.modelContainer)
+        for ek in ekIDs {
+            await context.services.remindersSyncService?.deleteEKReminder(eventKitIdentifier: ek)
+        }
         do {
             let result = try Self.performAction(todoID: uuid, modelContainer: context.services.modelContainer)
             await context.services.remindersSyncService?.triggerReconcile()
@@ -41,6 +49,20 @@ enum DeleteTodoTool: Tool {
         } catch {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
         }
+    }
+
+    /// Pre-archive: walks the parent + its non-archived subtasks and returns every
+    /// `eventKitIdentifier` so the caller can ask the sync service to remove the
+    /// paired EKReminders before the SwiftData state flip.
+    private static func collectEventKitIdentifiers(todoID: UUID, modelContainer: ModelContainer) -> [String] {
+        let context = ModelContext(modelContainer)
+        guard let item = TodoToolUtils.fetchItem(id: todoID.uuidString, in: context) else { return [] }
+        var ids: [String] = []
+        if let parentID = item.eventKitIdentifier { ids.append(parentID) }
+        for sub in item.subtasks where !sub.isArchived {
+            if let subID = sub.eventKitIdentifier { ids.append(subID) }
+        }
+        return ids
     }
 
     struct ArchiveResult {

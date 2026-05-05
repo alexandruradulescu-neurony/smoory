@@ -70,11 +70,12 @@ enum GetOpenTodosTool: Tool {
         let allItems = (try? modelContext.fetch(descriptor)) ?? []
 
         // Top-level only: subtasks ride along nested under their parent payloads, never flat.
-        // 4.8c — narrow to "todo-shaped" items: anything with a due date or priority set, OR
-        // anchored to a role/project/thread. Excludes plain shopping/reading list rows that
-        // weren't created with todo intent.
+        // 4.8c — narrow to "todo-shaped" items: anything in the auto-Todos list, OR with an
+        // explicit todo signal (due date, priority, role/project/thread). Excludes plain
+        // shopping/reading list rows that weren't created with todo intent.
         var filtered = allItems.filter { item in
             guard !item.isCompleted, !item.isArchived, item.parentItem == nil else { return false }
+            if item.list?.title == TodoToolUtils.defaultTodosListTitle { return true }
             return item.dueDate != nil
                 || item.priority > 0
                 || item.role != nil

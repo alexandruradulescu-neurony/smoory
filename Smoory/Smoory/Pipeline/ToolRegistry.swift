@@ -37,6 +37,24 @@ enum ToolRegistry {
         allTools.first { $0.name == name }
     }
 
+    /// Subset used by background-generation flows (morning brief, week-review pattern
+    /// analysis, etc.) where the LLM should be able to *read* the user's state but
+    /// must never mutate it. Bug-fix follow-up to the report finding that
+    /// `MorningBriefGenerator` passed `allTools` and a hallucinated silent-write call
+    /// could leak state changes through.
+    static func readOnlyToolsForReviews() -> [any Tool.Type] {
+        [
+            GetCalendarWindowTool.self,
+            GetActiveGoalsTool.self,
+            GetOpenTodosTool.self,
+            RetrieveMemoryTool.self,
+            GetListsTool.self,
+            GetListItemsTool.self,
+            GetOffPeriodsTool.self,
+            GetMyScheduledActionsTool.self
+        ]
+    }
+
     static func anthropicToolDefinitions(for tools: [any Tool.Type] = allTools) -> [LLMTool] {
         tools.map { tool in
             LLMTool(

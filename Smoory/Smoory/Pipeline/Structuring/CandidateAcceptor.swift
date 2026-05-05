@@ -8,7 +8,8 @@ enum CandidateAcceptor {
     static func accept(
         candidate: CandidateWrite,
         modelContainer: ModelContainer,
-        hema: HemaService
+        hema: HemaService,
+        remindersSyncService: RemindersSyncService? = nil
     ) async throws {
         // Re-fetch in this context so mutations land in the same context we save.
         // Mutating the @Bindable from FeedView's context and saving a different
@@ -48,6 +49,11 @@ enum CandidateAcceptor {
                 modelContainer: modelContainer
             )
             stored.resultEntityID = item.id
+            // Bug-fix follow-up: performAction is the direct path; the Reminders sync
+            // trigger lives in CreateTodoTool.execute(), which we bypassed. Fire it
+            // here so chat-confirmed candidates round-trip into Reminders.app like
+            // chat-tool-fired ones do.
+            remindersSyncService?.triggerReconcile()
 
         case .person:
             let person = Person()
@@ -213,7 +219,13 @@ enum CandidateAcceptor {
                 vector: nil,
                 isPrivate: false
             )
-            let writtenID = try await hema.writeFact(newFact)
+            // bypassDedup: a refine/contradict/merge writes a new body and supersedes
+            // one or more old facts. If dedup substituted the returned id for one of
+            // those olds (refine especially: new body is semantically very close to
+            // the old it's replacing), the supersede call below would mark the old
+            // fact as superseding itself — silent data loss. Force the INSERT so the
+            // new row has its own UUID and supersession links to a different row.
+            let writtenID = try await hema.writeFact(newFact, bypassDedup: true)
             for oldID in payload.oldFactIDs {
                 try await hema.supersedeFact(oldFactID: oldID, newFactID: writtenID)
             }
@@ -240,7 +252,10 @@ enum CandidateAcceptor {
                     vector: nil,
                     isPrivate: false
                 )
-                let id = try await hema.writeFact(newFact)
+                // bypassDedup: split intentionally produces N distinct new facts; dedup
+                // collapsing one of them to a sibling-new id (or to the old id) would
+                // mangle the intended fan-out.
+                let id = try await hema.writeFact(newFact, bypassDedup: true)
                 newIDs.append(id)
             }
             if let firstNew = newIDs.first {

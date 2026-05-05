@@ -70,8 +70,14 @@ final class HemaService: @unchecked Sendable {
     /// Writes a fact with insert-time dedup. Returns the id of the surviving row:
     /// either `fact.id` (newly inserted) or the existing duplicate's id (skipped insert).
     /// Callers should record the returned id, not `fact.id`, when storing audit references.
+    ///
+    /// Pass `bypassDedup: true` when the caller explicitly wants the new row inserted
+    /// even if a near-duplicate exists — used by the 4.5 fact-restructurer's
+    /// refine/contradict/merge ops, where dedup-substitution would mark the
+    /// to-be-superseded fact as superseding itself (the bug fixed in
+    /// CandidateAcceptor.acceptFactRewrite).
     @discardableResult
-    func writeFact(_ fact: SemanticFact) async throws -> UUID {
+    func writeFact(_ fact: SemanticFact, bypassDedup: Bool = false) async throws -> UUID {
         let tagsJSON = try Self.encodeJSON(fact.tags)
         let entitiesJSON = try Self.encodeJSON(fact.entitiesReferenced)
 
@@ -88,7 +94,7 @@ final class HemaService: @unchecked Sendable {
         // Dedup pre-check. If a non-superseded fact already covers this content
         // (exact normalized body OR cosine sim ≥ 0.95), skip the INSERT and return
         // its id. Optionally upgrade metadata when the new write is "stronger".
-        if let dupID = try await findDuplicateFact(body: fact.body, embedding: vector) {
+        if !bypassDedup, let dupID = try await findDuplicateFact(body: fact.body, embedding: vector) {
             if fact.userConfirmed {
                 try await db.execute("""
                     UPDATE semantic_facts

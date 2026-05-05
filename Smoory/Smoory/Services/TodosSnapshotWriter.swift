@@ -25,7 +25,11 @@ enum TodosSnapshotWriter {
         )
         let openItems = (try? context.fetch(openDescriptor)) ?? []
         let openTodos = openItems.filter { item in
-            item.dueDate != nil
+            // Items in the auto-Todos list always count; items elsewhere need an
+            // explicit todo signal so plain shopping/reading list rows don't
+            // hijack the widget snapshot.
+            if item.list?.title == TodoToolUtils.defaultTodosListTitle { return true }
+            return item.dueDate != nil
                 || item.priority > 0
                 || item.role != nil
                 || item.parentProject != nil
@@ -42,6 +46,7 @@ enum TodosSnapshotWriter {
         let allCompleted = (try? context.fetch(completedDescriptor)) ?? []
         let completedTodayCount = allCompleted.filter { item in
             guard (item.completedAt ?? .distantPast) >= startOfToday else { return false }
+            if item.list?.title == TodoToolUtils.defaultTodosListTitle { return true }
             return item.dueDate != nil
                 || item.priority > 0
                 || item.role != nil

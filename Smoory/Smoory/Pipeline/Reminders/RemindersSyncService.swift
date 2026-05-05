@@ -182,6 +182,17 @@ final class RemindersSyncService {
         }
         let allSmooryListTitles = Set(allLists.map(\.title))
 
+        // Bug-fix follow-up: archived Smoory lists keep their `eventKitIdentifier`
+        // so a subsequent restore re-pairs cleanly. Without recording those
+        // identifiers here, step 5 would treat the EK calendar they used to point
+        // at as "unpaired" and import it as a fresh UserList — recreating the
+        // archived list seconds after archive.
+        let archivedEventKitIDs: Set<String> = Set(
+            allLists.lazy
+                .filter { $0.isArchived }
+                .compactMap { $0.eventKitIdentifier }
+        )
+
         // 2. Reminders calendars from EK.
         let ekCalendars = store.calendars(for: .reminder)
 
@@ -199,6 +210,11 @@ final class RemindersSyncService {
                 smooryUnpaired.append(list)
             }
         }
+
+        // Strip EK calendars owned by an archived Smoory list. They're "unpaired" only
+        // because we filtered the archived owner out of `smooryLists` above; their
+        // archive intent shouldn't trigger a re-import.
+        ekUnpaired.removeAll { cal in archivedEventKitIDs.contains(cal.calendarIdentifier) }
 
         // 4. Smoory lists without an EK pair → create EK calendar.
         if let source = store.defaultCalendarForNewReminders()?.source {
@@ -302,8 +318,11 @@ final class RemindersSyncService {
             }
         }
 
-        // Pair items by eventKitIdentifier.
-        var smooryItems = smooryList.items
+        // Pair items by eventKitIdentifier. Archived items are excluded — the user
+        // soft-deleted them in Smoory; pairing them again would either re-create the
+        // EK reminder (push branch) or no-op (paired branch), and either way the
+        // archived intent leaks back into Reminders.
+        var smooryItems = smooryList.items.filter { !$0.isArchived }
         var ekUnpaired = ekReminders
         var pairs: [(UserListItem, EKReminder)] = []
         var matchedSmoory: Set<UUID> = []

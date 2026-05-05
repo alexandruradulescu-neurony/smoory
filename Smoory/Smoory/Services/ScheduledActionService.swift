@@ -64,13 +64,20 @@ final class ScheduledActionService {
         let context = ModelContext(modelContainer)
         let row = try Self.fetch(actionID, in: context)
 
+        let now = Date()
         let from = row.scheduledFor
-        let to = from.addingTimeInterval(interval)
+        // Bug-fix follow-up: anchor the new scheduledFor to max(now, from) before
+        // adding the offset. Otherwise a "+10 min" tap at 09:30 on a reminder that
+        // fired at 09:00 would push the new time to 09:10 (already past), and the
+        // polling tick would re-fire it almost immediately. The user expects "+10
+        // min from now" semantics regardless of how late they snoozed.
+        let anchor = max(from, now)
+        let to = anchor.addingTimeInterval(interval)
 
         row.scheduledFor = to
         row.deferralCount += 1
         var history = row.deferralHistory
-        history.append(DeferralEntry(at: Date(), fromTime: from, toTime: to, reason: reason))
+        history.append(DeferralEntry(at: now, fromTime: from, toTime: to, reason: reason))
         row.deferralHistory = history
         row.status = .pending
         try context.save()
@@ -134,8 +141,19 @@ final class ScheduledActionService {
     func markFiring(actionID: UUID) throws -> ScheduledAction {
         let context = ModelContext(modelContainer)
         let row = try Self.fetch(actionID, in: context)
-        row.status = .firing
-        try context.save()
+        // Bug-fix follow-up: only flip to .firing from .pending. Without this guard a
+        // tap on an already-delivered notification (still sitting in Notification
+        // Center) for an action the user already completed/skipped/cancelled would
+        // resurrect it as .firing and the consumer would re-present the modal.
+        switch row.status {
+        case .pending, .firing, .deferred:
+            row.status = .firing
+            try context.save()
+        case .completed, .cancelled, .skipped:
+            // No-op. Caller's downstream branches see the existing terminal status
+            // and route appropriately (NotificationDelegate logs + drops the tap).
+            break
+        }
         return row
     }
 

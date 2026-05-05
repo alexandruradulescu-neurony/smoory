@@ -16,6 +16,7 @@ private struct FeedListContent: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.hemaState) private var hemaState
+    @Environment(\.remindersSyncService) private var remindersSyncService
 
     @Query(
         filter: #Predicate<CandidateWrite> { $0.statusRaw == 0 },
@@ -345,7 +346,8 @@ private struct FeedListContent: View {
             try await CandidateAcceptor.accept(
                 candidate: candidate,
                 modelContainer: modelContext.container,
-                hema: hema
+                hema: hema,
+                remindersSyncService: remindersSyncService
             )
             actionError = nil
         } catch {
