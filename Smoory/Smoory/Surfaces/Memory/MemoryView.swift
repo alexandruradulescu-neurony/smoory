@@ -72,10 +72,12 @@ private struct MemoryContent: View {
             .navigationDestination(for: MemoryTurn.self) { turn in
                 TurnDetailView(turn: turn, hema: hema)
             }
-            .onChange(of: viewModel.selectedTab) { _, newTab in
-                // Safety: showPrivate resets every time the user lands on Facts, even mid-session.
-                if newTab == .facts { factsVM.showPrivate = false }
-            }
+            // F-15 audit fix: previously `showPrivate` was reset to false on every
+            // Facts-tab re-entry. The user complained it forced re-toggling after a
+            // round-trip through Conversations. The toggle is a deliberate manual
+            // action; once flipped it should stick for the session. Default-off
+            // still applies on app launch (FactsListViewModel.showPrivate = false
+            // at init) — only the per-tab-switch reset is removed.
         }
     }
 
