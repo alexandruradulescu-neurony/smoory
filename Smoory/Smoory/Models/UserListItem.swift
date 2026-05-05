@@ -36,6 +36,44 @@ final class UserListItem {
     /// Optional URL the user attached to the item. Round-trips with `EKReminder.url`.
     var urlString: String?
 
+    // MARK: - Todo-absorption fields (4.8b)
+
+    /// Self-referential parent for hierarchy. Mirrors the Todo→Todo subtask relationship
+    /// so a UserListItem can represent a parent task with checkable subtasks beneath it.
+    var parentItem: UserListItem?
+    /// Subtasks — cascade-deleted with the parent. Inverse of `parentItem`.
+    @Relationship(deleteRule: .cascade, inverse: \UserListItem.parentItem)
+    var subtasks: [UserListItem] = []
+
+    /// Optional role this item belongs to (work / personal / freelance). Lets a list item
+    /// participate in the same review-loop semantics that day/week reviews apply to Todos.
+    var role: Role?
+    /// Optional project association. Inverse not declared on `Project` to keep that side
+    /// stable — Project.parentTodo doesn't need to flip into a heterogeneous list.
+    var parentProject: Project?
+    /// Optional thread association — same reasoning as project.
+    var parentThread: Thread?
+    /// People referenced by the item. Phase 1 type; same-shape as Todo.relatedPeople.
+    var relatedPeople: [Person] = []
+
+    /// Source provenance. Stored as Int raw with the same case set as `TodoSource` so
+    /// the day-end batched extractor can group by source identically across both kinds.
+    /// 0 = userChat, 1 = userQuickadd, 2 = aiProposal, 3 = emailExtraction,
+    /// 4 = calendarExtraction, 5 = manual.
+    var sourceRaw: Int = 0
+    /// Number of times this item has been deferred (pushed to a later date). Phase 3
+    /// pattern analysis uses the count to surface "you've moved this 3 times" signals.
+    var deferralCount: Int = 0
+    /// Last-known due date before the most recent deferral — kept so pattern analysis
+    /// can surface "originally due X, now due Y".
+    var deferredFrom: Date?
+
+    /// Soft-delete flag at the item level (distinct from `UserList.isArchived`, which
+    /// hides the entire list). Lets a single item be archived without removing it from
+    /// the list — useful when a user changes their mind.
+    var isArchived: Bool = false
+    var archivedAt: Date?
+
     var list: UserList?         // inverse — set by SwiftData via UserList.items
 
     init() {}
@@ -81,4 +119,33 @@ extension UserListItem {
         guard let raw = urlString, !raw.isEmpty else { return nil }
         return URL(string: raw)
     }
+
+    /// Source provenance (4.8b). Mirrors `TodoSource` so day-end extraction can group
+    /// list items by source identically to how it grouped Todos.
+    var source: UserListItemSource {
+        get { UserListItemSource(rawValue: sourceRaw) ?? .userChat }
+        set { sourceRaw = newValue.rawValue }
+    }
+
+    /// (completed, total) over direct subtasks. Mirror of `Todo.subtaskProgress`.
+    var subtaskProgress: (completed: Int, total: Int) {
+        let total = subtasks.count
+        let completed = subtasks.filter(\.isCompleted).count
+        return (completed, total)
+    }
+
+    /// Convenience: this item is at the top of the hierarchy (no parent item).
+    var isTopLevel: Bool { parentItem == nil }
+}
+
+/// Source provenance for a `UserListItem`. Same case set as `TodoSource` (4.8b
+/// migration parity) so any code that grouped Todos by source can read the new
+/// field with no semantic shift.
+enum UserListItemSource: Int, Codable, Sendable {
+    case userChat = 0
+    case userQuickadd = 1
+    case aiProposal = 2
+    case emailExtraction = 3
+    case calendarExtraction = 4
+    case manual = 5
 }
