@@ -141,9 +141,14 @@ private struct ChatViewContent: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            // F-12/F-13 audit fix: previous TextField had `lineLimit(3...12)` but no
+            // pixel cap, so a long pasted block grew the composer until it pushed the
+            // transcript off-screen. `frame(maxHeight: 200)` clamps the visible area;
+            // overflow scrolls within the field rather than expanding the row.
             TextField("Message Smoory", text: $viewModel.draft, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(3...12)
+                .frame(maxHeight: 200)
                 .focused($isInputFocused)
                 .onKeyPress(phases: .down) { press in
                     guard press.key == .return else { return .ignored }
