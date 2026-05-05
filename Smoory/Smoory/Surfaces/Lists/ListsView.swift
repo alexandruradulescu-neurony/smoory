@@ -86,11 +86,17 @@ struct ListsView: View {
         if visibleLists.isEmpty {
             emptyListsState
         } else {
+            // Bug fix: previously `.listStyle(.sidebar)` made the top of the picker
+            // pick up the outer NavigationSplitView's sidebar vibrancy, so the
+            // first rows showed the wallpaper bleeding through. `.inset` + an
+            // opaque windowBackground anchor renders the picker as a regular
+            // pane that doesn't double-layer macOS material.
             List(visibleLists, id: \.id, selection: $selectedListID) { list in
                 UserListRow(list: list)
                     .tag(list.id)
             }
-            .listStyle(.sidebar)
+            .listStyle(.inset)
+            .background(Color(NSColor.controlBackgroundColor))
         }
     }
 
@@ -186,9 +192,15 @@ struct UserListDetail: View {
     @State private var pendingItemRemoval: UserListItem?
     @State private var pendingArchive = false
     @State private var editingItem: UserListItem?
+    /// User preference: hide completed checklist items. Persists per-app, not per-list,
+    /// since the typical use case is "I always want completed hidden" rather than
+    /// "list A yes / list B no". Notes-kind lists ignore this flag.
+    @AppStorage("lists.hideCompleted") private var hideCompleted: Bool = false
 
     private var sortedItems: [UserListItem] {
-        list.items.sorted { $0.order < $1.order }
+        let base = list.items.sorted { $0.order < $1.order }
+        guard list.kind == .checklist, hideCompleted else { return base }
+        return base.filter { !$0.isCompleted }
     }
 
     var body: some View {
@@ -256,6 +268,9 @@ struct UserListDetail: View {
             } else {
                 Menu {
                     if list.kind == .checklist {
+                        Toggle(isOn: $hideCompleted) {
+                            Label("Hide completed", systemImage: "eye.slash")
+                        }
                         Picker("Auto-reset", selection: cadenceBinding) {
                             ForEach(UserListResetCadence.allCases, id: \.self) { cadence in
                                 Text(cadence.displayLabel).tag(cadence)
