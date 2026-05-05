@@ -8,6 +8,8 @@ struct DeferPopover: View {
     let onCommit: () -> Void
     let onCancel: () -> Void
 
+    @Environment(\.errorBus) private var errorBus
+
     @State private var newDueDate: Date = Date().addingTimeInterval(86400)
     @State private var reason: String = ""
 
@@ -49,7 +51,11 @@ struct DeferPopover: View {
             )
             onCommit()
         } catch {
+            // F-7 audit fix: pre-fix this just print()d and called onCancel(), so the
+            // user thought the defer worked. Surface the failure on the bus before
+            // dismissing so the user can retry instead of silently losing the action.
             print("[defer] failed: \(error)")
+            errorBus?.report("Couldn't defer \"\(todo.text)\": \(error.localizedDescription)")
             onCancel()
         }
     }

@@ -728,6 +728,18 @@ Per CLAUDE.md SwiftData rules: relations optional, no `@Attribute(.unique)`, def
 
 ---
 
+## ErrorBus — single shared mutation-error toast (audit fix F-23)
+
+**Decision:** A single app-level `ErrorBus` (`@Observable`, `@MainActor`) owns the active mutation-error toast and is injected via `@Environment(\.errorBus)`. `ContentView` renders a top-anchored `ErrorBannerOverlay` driven by it. Mutation handlers across the app call `errorBus?.report("Couldn't … : …")` instead of `print(…)` and silently swallowing.
+
+**Why:** Pre-fix, many mutation paths (defer, archive, save, complete subtask, …) used the `do { try … } catch { print(…) }` pattern. The user got no signal when something went wrong. A shared bus avoids per-surface `@State` error toggles and lets every site stay one line.
+
+**Latest-wins semantics:** `report(_:)` overwrites the active toast. Toasts auto-dismiss after 4 seconds and have a manual `xmark` close button. No queueing — if two errors fire in quick succession, the user sees the latest. (Acceptable for a personal single-user app; if multiple users / batch mutations land later, we revisit.)
+
+**Scope:** Only mutation failures the user is responsible for understanding (defer, archive, save, complete, sync). Background pipelines (structuring, brief generation, embedding) keep their existing `*FailureCounter` diagnostics in Settings — those aren't actionable in the moment.
+
+---
+
 ## FeedItem.stateRaw — durable @Predicate target (audit fix F-1)
 
 **Decision:** `FeedItem` gains a `var stateRaw: Int = FeedItemState.active.rawValue` field. The existing `state: FeedItemState` becomes a computed accessor over `stateRaw` (mirrors the `kindRaw` pattern already in the schema).

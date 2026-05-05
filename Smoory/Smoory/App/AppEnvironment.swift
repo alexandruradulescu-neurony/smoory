@@ -33,6 +33,13 @@ private struct VoiceCaptureKey: EnvironmentKey {
     static let defaultValue: VoiceCaptureService? = nil
 }
 
+/// F-23 audit fix: env-injected error toast bus so every mutation handler can
+/// surface failures with a single line. Default-nil so previews / tests that
+/// don't inject still work; sites read it as `Environment(\.errorBus)?.report(...)`.
+private struct ErrorBusKey: EnvironmentKey {
+    static let defaultValue: ErrorBus? = nil
+}
+
 extension EnvironmentValues {
     var hemaState: HemaState {
         get { self[HemaStateKey.self] }
@@ -71,5 +78,12 @@ extension EnvironmentValues {
     var voiceCaptureService: VoiceCaptureService? {
         get { self[VoiceCaptureKey.self] }
         set { self[VoiceCaptureKey.self] = newValue }
+    }
+    /// App-level ErrorBus (F-23 audit fix). Mutation handlers across surfaces report
+    /// caught errors to this bus instead of `print`-and-swallow; ContentView renders
+    /// the active toast as a top-anchored banner.
+    var errorBus: ErrorBus? {
+        get { self[ErrorBusKey.self] }
+        set { self[ErrorBusKey.self] = newValue }
     }
 }

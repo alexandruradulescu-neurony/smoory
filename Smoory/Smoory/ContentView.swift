@@ -10,6 +10,9 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.navigationState) private var navigationState
+    /// F-23 audit fix: app-level error bus. ContentView renders an `ErrorBannerOverlay`
+    /// at the top so failures from any surface's mutation handler become visible.
+    @Environment(\.errorBus) private var errorBus
     /// Local fallback so the previews / tests without env injection still work.
     @State private var localSelection: Surface? = .feed
 
@@ -34,14 +37,20 @@ struct ContentView: View {
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
         } detail: {
-            switch resolvedSelection {
-            case .feed: FeedView()
-            case .todos: TodosView()
-            case .lists: ListsView()
-            case .chat: ChatView()
-            case .memory: MemoryView()
-            case .settings: SettingsView()
-            case .none: FeedView()
+            ZStack(alignment: .top) {
+                switch resolvedSelection {
+                case .feed: FeedView()
+                case .todos: TodosView()
+                case .lists: ListsView()
+                case .chat: ChatView()
+                case .memory: MemoryView()
+                case .settings: SettingsView()
+                case .none: FeedView()
+                }
+                if let errorBus {
+                    ErrorBannerOverlay(bus: errorBus)
+                        .allowsHitTesting(true)
+                }
             }
         }
     }

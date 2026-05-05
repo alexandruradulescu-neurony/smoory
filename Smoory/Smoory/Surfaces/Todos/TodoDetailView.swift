@@ -10,6 +10,8 @@ struct TodoDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    /// F-6 audit fix: surface mutation errors instead of silently print()-ing.
+    @Environment(\.errorBus) private var errorBus
 
     @Query private var todos: [UserListItem]
     @Query(sort: \Role.name) private var allRoles: [Role]
@@ -254,6 +256,7 @@ struct TodoDetailView: View {
             )
         } catch {
             print("[detail] save failed: \(error)")
+            errorBus?.report("Couldn't save changes: \(error.localizedDescription)")
         }
     }
 
@@ -262,6 +265,7 @@ struct TodoDetailView: View {
             try CompleteTodoTool.performAction(todoID: sub.id, modelContainer: modelContext.container)
         } catch {
             print("[detail] complete subtask failed: \(error)")
+            errorBus?.report("Couldn't complete \"\(sub.text)\": \(error.localizedDescription)")
         }
     }
 
@@ -278,6 +282,7 @@ struct TodoDetailView: View {
             newSubtaskTitle = ""
         } catch {
             print("[detail] add subtask failed: \(error)")
+            errorBus?.report("Couldn't add subtask: \(error.localizedDescription)")
         }
     }
 
@@ -292,6 +297,7 @@ struct TodoDetailView: View {
             ))
         } catch {
             print("[detail] archive subtask failed: \(error)")
+            errorBus?.report("Couldn't delete subtask: \(error.localizedDescription)")
         }
     }
 
@@ -307,6 +313,7 @@ struct TodoDetailView: View {
             dismiss()
         } catch {
             print("[detail] archive failed: \(error)")
+            errorBus?.report("Couldn't delete todo: \(error.localizedDescription)")
         }
     }
 

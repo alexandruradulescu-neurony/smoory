@@ -3,6 +3,8 @@ import SwiftUI
 
 struct TodosView: View {
     @Environment(\.modelContext) private var modelContext
+    /// F-23 audit fix: surface archive / undo failures via the shared bus.
+    @Environment(\.errorBus) private var errorBus
 
     /// F-4 audit fix: client-side filtered by `TodosViewModel.groupedTodos`. The query is
     /// intentionally unfiltered because "todo-shapedness" mixes signals (due date, priority,
@@ -206,6 +208,7 @@ struct TodosView: View {
             ))
         } catch {
             print("[surface] archive failed: \(error)")
+            errorBus?.report("Couldn't delete \"\(todo.text)\": \(error.localizedDescription)")
         }
     }
 
@@ -228,6 +231,7 @@ struct TodosView: View {
             )
         } catch {
             print("[surface] undo failed: \(error)")
+            errorBus?.report("Undo failed: \(error.localizedDescription)")
         }
         withAnimation { pendingUndo = nil }
     }

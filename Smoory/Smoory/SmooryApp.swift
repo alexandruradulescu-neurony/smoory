@@ -55,6 +55,10 @@ struct SmooryApp: App {
     /// 4.11 — voice dictation service. Single shared instance for the app's lifetime;
     /// review sheets + main chat read it via @Environment(\.voiceCaptureService).
     @State private var voiceCaptureService = VoiceCaptureService()
+    /// F-23 audit fix — app-wide error bus surfaced as a top-anchored banner via
+    /// `ContentView`. Mutation handlers across the app call `errorBus.report(...)`
+    /// instead of `print(...)` so the user sees when something goes wrong.
+    @State private var errorBus = ErrorBus()
     /// Timestamp of the last scenePhase → background transition. Used to gate
     /// the 5-min background-fire trigger so Cmd-Tab task switches don't fire
     /// extraction every time.
@@ -112,6 +116,7 @@ struct SmooryApp: App {
                     .environment(\.navigationState, navigationState)
                     .environment(\.remindersSyncService, remindersSyncService)
                     .environment(\.voiceCaptureService, voiceCaptureService)
+                    .environment(\.errorBus, errorBus)
                     .sheet(isPresented: Binding(
                         get: {
                             pendingDayReview.actionToPresent != nil
