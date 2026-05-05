@@ -14,6 +14,9 @@ enum FeedItemKind: Int, Codable, Sendable {
     case threadProposal = 10
     case patternObservation = 11
     case checkInDue = 12
+    /// 4.9 — surfaces a todo or calendar event that conflicts with a freshly-created
+    /// `OffPeriod`. Payload carries the OffPeriod id + the conflicting entity id.
+    case offPeriodConflict = 13
 }
 
 enum ConfirmationTier: Int, Codable, Sendable {

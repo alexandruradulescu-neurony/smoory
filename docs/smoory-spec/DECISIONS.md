@@ -639,4 +639,53 @@ Keep this document up to date as decisions evolve. Future-you (and Claude Code) 
 
 ---
 
+## 4.9 — Availability as `OffPeriod` entity + proactive conflict proposals (2026-05-04)
+
+**Decision:** Replace the Phase 3 stopgap (availability candidates persisted as semantic facts tagged `"availability"`) with a proper `OffPeriod` SwiftData entity, and add a proactive proposal generator that surfaces todo/calendar conflicts when an off-period is confirmed.
+
+**Why now:** The fact-based stopgap fails two things availability needs to be: (1) queryable as a time period — "am I off Tue?" needs range overlap, not vector search over fact bodies — and (2) actionable — when the user states off-time the spec calls for proposals to defer conflicting todos and decline conflicting meetings, not just a passive memory entry.
+
+**Schema:**
+
+```
+@Model final class OffPeriod {
+    var id: UUID = UUID()
+    var startDate: Date = Date()
+    var endDate: Date = Date()
+    var kindRaw: Int = OffPeriodKind.personal.rawValue
+    var notes: String = ""
+    var role: Role?
+    var sourceCandidateID: UUID?
+    var createdAt: Date = Date()
+    var updatedAt: Date = Date()
+}
+
+enum OffPeriodKind: Int { case vacation = 0, sick, holiday, personal, other }
+```
+
+Per CLAUDE.md SwiftData rules: relations optional, no `@Attribute(.unique)`, defaults on non-optionals, Int-raw enum.
+
+**Migration:** none. Existing availability facts (tag `"availability"`) stay in hema unchanged. New writes route through `OffPeriod` only. Fictitious data per the user's standing instruction.
+
+**Candidate flow:** `CandidateAcceptor`'s `.availability` branch flips from writing a `SemanticFact` to inserting an `OffPeriod`. The candidate's `expiresAt` becomes `endDate`; `startDate` defaults to the candidate's `createdAt` when the structuring layer didn't extract one. `sourceCandidateID = candidate.id` for audit.
+
+**Proactive proposal generator:** New `OffPeriodProposalGenerator` (Pipeline/Availability/) fires after each `OffPeriod` insert. Two passes:
+1. Open `UserListItem` rows (todo-shaped: due date, priority, role/project/thread anchor) with `dueDate` falling inside `[startDate, endDate]` → write a `FeedItem` of new kind `.offPeriodConflict` with payload referencing the OffPeriod + the todo. Card text: "Defer 'X' until after [end-date]?" Confirming the card invokes the existing `DeferTodoTool` path.
+2. Calendar events in the same range via `CalendarService.eventsBetween` → informational `FeedItem` ("Maria meeting Tue 2pm — review whether to keep / move"). No auto-decline since calendar write is spec'd post-v1.
+
+**Chat tool:** `get_off_periods` (silent read) returns active + upcoming periods so the LLM can answer "am I off next week?". Creation continues to flow through the structuring candidate path; tool-side `create_off_period`/`delete_off_period` deferred to 4.9.x if usage justifies.
+
+**UI:** A "Time off" section in Settings lists current + upcoming periods with delete affordance. No dedicated sidebar surface — would be heavy for what's a sliver of calendar-shaped data. Feed renders the proactive cards inline alongside other feed items.
+
+**Out of scope for 4.9:**
+- Out-of-office email auto-reply (no email layer yet).
+- Auto-decline calendar events. Calendar write is post-v1; conflict cards inform, they don't act.
+- Recurring off periods ("every Friday off"). Single windows only.
+- Per-role availability matrix. Optional `role` field exists; richer multi-role logic deferred.
+- Backfill of pre-4.9 availability facts into `OffPeriod` rows.
+- Dedicated sidebar surface for time off.
+- Tool-side `create_off_period` / `delete_off_period`.
+
+---
+
 End of spec. Time to build.

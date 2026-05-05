@@ -119,6 +119,8 @@ struct SettingsView: View {
 
             remindersSyncSection
 
+            timeOffSection
+
             Section("Onboarding") {
                 HStack {
                     Button("Restart onboarding") {
@@ -263,6 +265,13 @@ struct SettingsView: View {
                 )
             }
         }
+    }
+
+    // MARK: - Time off section (4.9)
+
+    @ViewBuilder
+    private var timeOffSection: some View {
+        TimeOffSettingsSection(modelContainer: modelContext.container)
     }
 
     // MARK: - Reminders sync section (4.7)

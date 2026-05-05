@@ -62,35 +62,33 @@ enum CandidateAcceptor {
             stored.resultEntityID = infra.id
 
         case .availability:
-            // Stopgap (see PHASE_3_NOTES.md): no Availability/OffPeriod entity yet.
-            // Write as a fact tagged "availability"; expiresAt carries the time bound.
-            let fact = SemanticFact(
-                id: UUID(),
-                body: body,
-                tags: ["availability"],
-                entitiesReferenced: [],
-                confidence: stored.confidence,
-                userConfirmed: true,
-                createdAt: Date(),
-                expiresAt: stored.expiresAt,
-                supersededBy: nil,
-                provenanceJSON: makeProvenanceJSON(
-                    sourceKind: stored.sourceKind.isEmpty ? "structuring_layer" : stored.sourceKind,
-                    candidate: stored
-                ),
-                vector: nil,
-                isPrivate: false
-            )
-            // writeFact returns the surviving id — may differ from fact.id when dedup
-            // matched an existing row. Use it for the audit reference.
-            let writtenID = try await hema.writeFact(fact)
-            stored.resultEntityID = writtenID
-            SupersessionCandidateBuilder.runDetectionAfterWrite(
-                newFactID: writtenID,
-                newFactBody: fact.body,
-                hema: hema,
-                modelContainer: modelContainer
-            )
+            // 4.9 — replaces the Phase 3 stopgap that wrote tag-availability facts.
+            // Now creates an OffPeriod entity. start defaults to today's start-of-day
+            // (the user said "I'll be off …" at confirm time); end uses the
+            // candidate's expiresAt when set, else mirrors start (single-day off).
+            let cal = Calendar.current
+            let startDay = cal.startOfDay(for: Date())
+            let endDay: Date = stored.expiresAt.map { cal.startOfDay(for: $0) } ?? startDay
+            let off = OffPeriod()
+            off.startDate = startDay
+            off.endDate = endDay >= startDay ? endDay : startDay
+            off.kind = .personal
+            off.notes = body
+            off.sourceCandidateID = stored.id
+            let now = Date()
+            off.createdAt = now
+            off.updatedAt = now
+            context.insert(off)
+            stored.resultEntityID = off.id
+
+            // Fire-and-forget: surface conflicting todos / calendar events as feed
+            // cards once the OffPeriod row is durable. Generator opens a fresh
+            // ModelContext so it doesn't race the save below.
+            let generator = OffPeriodProposalGenerator(modelContainer: modelContainer)
+            let offID = off.id
+            Task { @MainActor in
+                await generator.proposeConflicts(forOffPeriodID: offID)
+            }
 
         case .toneObservation:
             // Stopgap (see PHASE_4_NOTES.md): tag-as-tone fact until ToneProfile flow lands.

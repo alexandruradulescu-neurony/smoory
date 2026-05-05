@@ -58,6 +58,7 @@ struct FeedItemRow: View {
         case .threadProposal: "text.alignleft"
         case .patternObservation: "waveform.path.ecg"
         case .checkInDue: "clock.badge.checkmark"
+        case .offPeriodConflict: "calendar.badge.exclamationmark"
         }
     }
 
@@ -76,6 +77,7 @@ struct FeedItemRow: View {
         case .threadProposal: "Thread proposal"
         case .patternObservation: "Pattern"
         case .checkInDue: "Check-in"
+        case .offPeriodConflict: "Time-off conflict"
         }
     }
 }
