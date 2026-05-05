@@ -806,4 +806,20 @@ Single-user fictitious-data context (current state of Smoory) lets us skip this 
 
 ---
 
+## Missed reviews surface in Feed; auto-skip after 18h
+
+**Decision:** Review-kind `ScheduledAction` rows (`.dayReview`, `.endOfDay`, `.weekReview`) that are still `.firing` (or `.pending` and overdue) when the user opens the app surface as tappable rows in a new "Reviews" section at the top of the Feed. Rows older than 18h auto-skip on launch via `ScheduledActionService.skipStaleReviewMisses()` so the recurring chain advances.
+
+**Why:** Pre-fix, a `.firing` review whose OS notification was never tapped sat indefinitely in `.firing`. `regenerateNextOccurrence` only fires on `markCompleted` / `skipThisOccurrence`, so a single missed-and-untapped night silently killed the entire daily/weekly cadence. Even within the actionable window, no UI surface presented the missed review without a notification tap — it was effectively invisible.
+
+**Why 18h cutoff:** A review missed at 21:00 last night is still useful to take through next morning. By mid-afternoon (~15:00) the day has moved on; reviewing yesterday at that point is more friction than value. Auto-skipping at 18h regenerates tonight's instance with margin to spare before the next 21:00 fire.
+
+**Why "Reviews" gets its own header above "To review":** A missed review is heavier-weight than a fact candidate (it represents a structured ritual), and visual separation surfaces priority. Tap routes through the same `Pending*ReviewState.actionToPresent` path `NotificationDelegate` uses for notification taps — single sheet plumbing, two entry points.
+
+**No manual dismiss in the Feed row:** Auto-skip at 18h covers the chain-preservation case. Manual dismissal would just be redundant friction; "I'll deal with it later" is the implicit default and the 18h timer turns "later" into "never" automatically.
+
+**Out of scope:** `.morningBrief` is generated content, not a reviewable ritual; it doesn't fit the "missed review" concept and stays out of this surface. `.userReminder` already has its own `FiredReminderQueue` banner path. `.goalNudge` has no consumer wired yet.
+
+---
+
 End of spec. Time to build.

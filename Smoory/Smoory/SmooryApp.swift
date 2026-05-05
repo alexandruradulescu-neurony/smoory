@@ -117,6 +117,9 @@ struct SmooryApp: App {
                     .environment(\.remindersSyncService, remindersSyncService)
                     .environment(\.voiceCaptureService, voiceCaptureService)
                     .environment(\.errorBus, errorBus)
+                    .environment(\.pendingDayReview, pendingDayReview)
+                    .environment(\.pendingWeekReview, pendingWeekReview)
+                    .environment(\.pendingEndOfDay, pendingEndOfDay)
                     .sheet(isPresented: Binding(
                         get: {
                             pendingDayReview.actionToPresent != nil
@@ -142,6 +145,13 @@ struct SmooryApp: App {
                         // gap extractor so the dedup set the extractor builds is
                         // already trimmed.
                         CandidateWrite.pruneStaleRejectedFacts(modelContainer: sharedModelContainer)
+                        // Auto-skip review-kind rows older than 18h so the daily/
+                        // weekly recurring chain advances even after a missed-tap
+                        // night. Within-window rows surface in Feed → Reviews so
+                        // the user can still take them.
+                        if let svc = scheduledActionService {
+                            await svc.skipStaleReviewMisses()
+                        }
                         await initializeHemaIfNeeded()
                         await requestNotificationPermissionIfNeeded()
                         startPollingIfNeeded()

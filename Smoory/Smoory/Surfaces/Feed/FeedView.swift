@@ -17,6 +17,22 @@ private struct FeedListContent: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.hemaState) private var hemaState
     @Environment(\.remindersSyncService) private var remindersSyncService
+    @Environment(\.scheduledActionService) private var scheduledActionService
+    @Environment(\.pendingDayReview) private var pendingDayReview
+    @Environment(\.pendingWeekReview) private var pendingWeekReview
+    @Environment(\.pendingEndOfDay) private var pendingEndOfDay
+
+    // Firing scheduled actions. Filtered to review kinds + overdue scheduledFor
+    // in the body. Predicate stays single-clause to keep the type-checker fast
+    // (compound OR-AND-OR predicates timeout on this query). Stale rows (>18h)
+    // auto-skip via skipStaleReviewMisses before launch finishes, so anything
+    // surfaced here is still actionable. processOverdue's polling tick flips
+    // pending+overdue rows to .firing, so the @Query auto-refreshes them in.
+    @Query(
+        filter: #Predicate<ScheduledAction> { $0.statusRaw == 1 },
+        sort: \ScheduledAction.scheduledFor, order: .forward
+    )
+    private var firingActions: [ScheduledAction]
 
     @Query(
         filter: #Predicate<CandidateWrite> { $0.statusRaw == 0 },
@@ -61,8 +77,30 @@ private struct FeedListContent: View {
             filterPills
 
             let rows = currentRows
+            let now = Date()
+            let actionableReviews = firingActions.filter { row in
+                row.scheduledFor <= now
+                    && (row.kind == .dayReview
+                        || row.kind == .endOfDay
+                        || row.kind == .weekReview)
+            }
 
             List {
+                if !actionableReviews.isEmpty {
+                    Section {
+                        ForEach(actionableReviews) { review in
+                            FiringReviewRow(action: review) {
+                                Task { await openReview(review) }
+                            }
+                            .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                        }
+                    } header: {
+                        reviewsSectionHeader
+                    }
+                }
+
                 Section {
                     if rows.isEmpty {
                         emptyState
@@ -133,6 +171,41 @@ private struct FeedListContent: View {
             Spacer()
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var reviewsSectionHeader: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock.badge.exclamationmark")
+                .foregroundStyle(.orange)
+            Text("Reviews")
+                .font(.smoory_display)
+                .foregroundStyle(.primary)
+                .textCase(nil)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// Tap handler for a firing-review row. Mirrors NotificationDelegate's
+    /// `routeFiringActionToConsumer`: ensure status is .firing (idempotent),
+    /// then route by kind into the corresponding pending-state's
+    /// `actionToPresent` so SmooryApp's `.sheet` binding presents the modal.
+    @MainActor
+    private func openReview(_ review: ScheduledAction) async {
+        if let svc = scheduledActionService {
+            _ = try? svc.markFiring(actionID: review.id)
+        }
+        switch review.kind {
+        case .dayReview:
+            pendingDayReview?.actionToPresent = review
+        case .endOfDay:
+            pendingEndOfDay?.actionToPresent = review
+        case .weekReview:
+            pendingWeekReview?.actionToPresent = review
+        default:
+            break
+        }
     }
 
     @ViewBuilder

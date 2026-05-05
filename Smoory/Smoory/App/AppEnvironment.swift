@@ -40,6 +40,21 @@ private struct ErrorBusKey: EnvironmentKey {
     static let defaultValue: ErrorBus? = nil
 }
 
+/// Env-injected pending-review states. SmooryApp owns the @State instances and
+/// drives the .sheet binding off them; FeedView's "Reviews" surface taps set
+/// `.actionToPresent` to open the corresponding review modal.
+private struct PendingDayReviewStateKey: EnvironmentKey {
+    static let defaultValue: PendingDayReviewState? = nil
+}
+
+private struct PendingWeekReviewStateKey: EnvironmentKey {
+    static let defaultValue: PendingWeekReviewState? = nil
+}
+
+private struct PendingEndOfDayStateKey: EnvironmentKey {
+    static let defaultValue: PendingEndOfDayState? = nil
+}
+
 extension EnvironmentValues {
     var hemaState: HemaState {
         get { self[HemaStateKey.self] }
@@ -85,5 +100,20 @@ extension EnvironmentValues {
     var errorBus: ErrorBus? {
         get { self[ErrorBusKey.self] }
         set { self[ErrorBusKey.self] = newValue }
+    }
+    /// Pending-review states. FeedView's "Reviews" surface reads these to present
+    /// the corresponding review sheet on tap, mirroring NotificationDelegate's
+    /// notification-tap path.
+    var pendingDayReview: PendingDayReviewState? {
+        get { self[PendingDayReviewStateKey.self] }
+        set { self[PendingDayReviewStateKey.self] = newValue }
+    }
+    var pendingWeekReview: PendingWeekReviewState? {
+        get { self[PendingWeekReviewStateKey.self] }
+        set { self[PendingWeekReviewStateKey.self] = newValue }
+    }
+    var pendingEndOfDay: PendingEndOfDayState? {
+        get { self[PendingEndOfDayStateKey.self] }
+        set { self[PendingEndOfDayStateKey.self] = newValue }
     }
 }

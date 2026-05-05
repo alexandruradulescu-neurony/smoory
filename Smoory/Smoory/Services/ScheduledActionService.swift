@@ -265,6 +265,47 @@ final class ScheduledActionService {
 
     // MARK: - Background processing
 
+    /// Skips review-kind rows (.dayReview / .endOfDay / .weekReview) whose
+    /// `scheduledFor` is older than `cutoffSeconds`, regardless of whether
+    /// they're still .pending or already .firing. Skipping triggers
+    /// `regenerateNextOccurrence` for recurring rules so the daily/weekly
+    /// chain advances even when the user never tapped the OS notification.
+    /// Without this, a single missed-and-untapped review stalls the whole
+    /// recurring thread (regen only fires on markCompleted/skipThisOccurrence).
+    /// Default cutoff = 18h: a review missed last night auto-skips by mid-
+    /// afternoon the next day, leaving the morning to act on it via the Feed
+    /// "Reviews" surface.
+    func skipStaleReviewMisses(
+        now: Date = Date(),
+        cutoffSeconds: TimeInterval = 18 * 3600
+    ) async {
+        let cutoff = now.addingTimeInterval(-cutoffSeconds)
+        let context = ModelContext(modelContainer)
+        let pendingRaw = ScheduledActionStatus.pending.rawValue
+        let firingRaw = ScheduledActionStatus.firing.rawValue
+        let dayReviewRaw = ScheduledActionKind.dayReview.rawValue
+        let endOfDayRaw = ScheduledActionKind.endOfDay.rawValue
+        let weekReviewRaw = ScheduledActionKind.weekReview.rawValue
+        let descriptor = FetchDescriptor<ScheduledAction>(
+            predicate: #Predicate {
+                ($0.statusRaw == pendingRaw || $0.statusRaw == firingRaw)
+                    && ($0.kindRaw == dayReviewRaw
+                        || $0.kindRaw == endOfDayRaw
+                        || $0.kindRaw == weekReviewRaw)
+                    && $0.scheduledFor < cutoff
+            }
+        )
+        guard let stale = try? context.fetch(descriptor), !stale.isEmpty else { return }
+        for row in stale {
+            do {
+                try await skipThisOccurrence(actionID: row.id)
+            } catch {
+                print("[scheduled] skipStaleReviewMisses: skip \(row.id) failed: \(error)")
+            }
+        }
+        print("[scheduled] skipStaleReviewMisses: skipped \(stale.count) stale review row(s)")
+    }
+
     /// Flips any pending-and-overdue rows to .firing. Called from the foreground polling
     /// timer and on app launch. Errors are logged and swallowed — this runs without a
     /// caller to surface failures to.
