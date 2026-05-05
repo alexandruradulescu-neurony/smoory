@@ -96,6 +96,28 @@ private struct FeedListContent: View {
             .listRowSeparator(.hidden)
         }
         .task { await calendar.load() }
+        .task(id: activeFeedItems.count) {
+            await sweepDuplicateMorningBriefs()
+        }
+    }
+
+    /// Permanently mark older active morning briefs as `.actedUpon` so the @Query
+    /// returns only the freshest. Mirror of `MorningBriefGenerator.markPreviousBriefsActedUpon`,
+    /// triggered here as a self-healing pass for data carried over from the pre-stateRaw
+    /// schema where `state = .actedUpon` was lost in lightweight migration.
+    @MainActor
+    private func sweepDuplicateMorningBriefs() async {
+        let briefs = activeFeedItems.filter { $0.kind == .morningBrief }
+        guard briefs.count > 1 else { return }
+        guard let newest = briefs.max(by: { $0.createdAt < $1.createdAt }) else { return }
+        let now = Date()
+        for old in briefs where old.id != newest.id {
+            old.state = .actedUpon
+            old.actedUponAt = now
+            old.updatedAt = now
+        }
+        try? modelContext.save()
+        print("[feed] swept \(briefs.count - 1) stale morning briefs to actedUpon")
     }
 
     @ViewBuilder
