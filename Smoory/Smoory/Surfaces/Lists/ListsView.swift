@@ -170,6 +170,7 @@ struct UserListDetail: View {
     @State private var newItemText: String = ""
     @State private var pendingItemRemoval: UserListItem?
     @State private var pendingArchive = false
+    @State private var editingItem: UserListItem?
 
     private var sortedItems: [UserListItem] {
         list.items.sorted { $0.order < $1.order }
@@ -188,7 +189,8 @@ struct UserListDetail: View {
                             item: item,
                             kind: list.kind,
                             onToggle: { toggleItem(item) },
-                            onRemove: { pendingItemRemoval = item }
+                            onRemove: { pendingItemRemoval = item },
+                            onEdit: { editingItem = item }
                         )
                     }
                     .onMove(perform: moveItems)
@@ -209,6 +211,14 @@ struct UserListDetail: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("\"\(list.title)\" and its \(list.itemCount) item(s) will be hidden. You can restore from the archived view.")
+        }
+        .sheet(item: $editingItem) { item in
+            UserListItemDetailSheet(
+                item: item,
+                modelContainer: modelContainer,
+                remindersSyncService: remindersSyncService,
+                onClose: { editingItem = nil }
+            )
         }
     }
 

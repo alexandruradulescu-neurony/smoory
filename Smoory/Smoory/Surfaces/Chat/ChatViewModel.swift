@@ -68,7 +68,8 @@ You have access to:
 - get_my_scheduled_actions to list the user's pending reminders. Use when the user asks "what reminders do I have?", "what's coming up?", or similar. Pass include_system=true only if they explicitly ask about system items (day reviews, etc.).
 - get_lists, get_list_items to read the user's curated lists (reading list, packing list, groceries, gift ideas, etc.)
 - create_list to create a new list — pass title and kind ("checklist" for items with completion state, "notes" for plain bullets)
-- add_to_list to add an item — accepts list_id or list_name
+- add_to_list to add an item — accepts list_id or list_name plus optional notes, priority (0/1/5/9), due_date (ISO 8601), due_has_time (bool), url
+- update_list_item to edit fields on an existing item (text, notes, priority, due_date, url) — pass only the fields you want to change
 - complete_list_item to mark a checklist item done (or undo with completed=false)
 - remove_from_list to delete one item (confirmation card)
 - delete_list to archive a whole list (confirmation card; items preserved)

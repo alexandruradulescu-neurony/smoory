@@ -328,11 +328,7 @@ final class RemindersSyncService {
             } else {
                 let reminder = EKReminder(eventStore: store)
                 reminder.calendar = ekCalendar
-                reminder.title = item.text
-                if item.isCompleted {
-                    reminder.isCompleted = true
-                    reminder.completionDate = item.completedAt ?? Date()
-                }
+                Self.push(item: item, to: reminder)
                 do {
                     try store.save(reminder, commit: false)
                     item.eventKitIdentifier = reminder.calendarItemIdentifier
@@ -350,11 +346,9 @@ final class RemindersSyncService {
         // and avoids the ambiguity. So: any EK orphan here is genuinely new from EK side.
         for reminder in ekUnpaired {
             let item = UserListItem()
-            item.text = reminder.title ?? ""
-            item.isCompleted = reminder.isCompleted
-            item.completedAt = reminder.completionDate
-            item.order = smooryList.nextItemOrder
             item.eventKitIdentifier = reminder.calendarItemIdentifier
+            item.order = smooryList.nextItemOrder
+            Self.pull(reminder: reminder, into: item)
             let now = Date()
             item.createdAt = now
             item.updatedAt = now
@@ -365,24 +359,14 @@ final class RemindersSyncService {
             report.itemsImportedFromEK += 1
         }
 
-        // Paired items: LWW reconcile on text + completion.
+        // Paired items: LWW reconcile on every synced field.
         for (smooryItem, reminder) in pairs {
+            guard Self.differs(item: smooryItem, reminder: reminder) else { continue }
             let ekModified = reminder.lastModifiedDate ?? Date.distantPast
             let smooryWins = smooryItem.updatedAt >= ekModified
 
-            let ekTitle = reminder.title ?? ""
-            let needsTextSync = ekTitle != smooryItem.text
-            let needsCompletionSync = reminder.isCompleted != smooryItem.isCompleted
-                || reminder.completionDate != smooryItem.completedAt
-
-            guard needsTextSync || needsCompletionSync else { continue }
-
             if smooryWins {
-                if needsTextSync { reminder.title = smooryItem.text }
-                if needsCompletionSync {
-                    reminder.isCompleted = smooryItem.isCompleted
-                    reminder.completionDate = smooryItem.completedAt
-                }
+                Self.push(item: smooryItem, to: reminder)
                 do {
                     try store.save(reminder, commit: false)
                     report.itemsUpdated += 1
@@ -390,14 +374,106 @@ final class RemindersSyncService {
                     report.errors.append("update item '\(smooryItem.text)': \(error.localizedDescription)")
                 }
             } else {
-                if needsTextSync { smooryItem.text = ekTitle }
-                if needsCompletionSync {
-                    smooryItem.isCompleted = reminder.isCompleted
-                    smooryItem.completedAt = reminder.completionDate
-                }
+                Self.pull(reminder: reminder, into: smooryItem)
                 smooryItem.updatedAt = Date()
                 report.itemsUpdated += 1
             }
         }
+    }
+
+    // MARK: - Field round-trip helpers (4.8a)
+
+    /// Copies every synced field from a Smoory `UserListItem` onto a fresh-or-existing
+    /// `EKReminder`. Centralized so push paths (new + LWW-Smoory-wins) use the same shape.
+    private static func push(item: UserListItem, to reminder: EKReminder) {
+        reminder.title = item.text
+        reminder.isCompleted = item.isCompleted
+        reminder.completionDate = item.completedAt
+        reminder.notes = (item.notes?.isEmpty ?? true) ? nil : item.notes
+        reminder.priority = max(0, min(9, item.priority))
+        if let date = item.dueDate {
+            reminder.dueDateComponents = makeDueDateComponents(from: date, hasTime: item.hasTime)
+        } else {
+            reminder.dueDateComponents = nil
+        }
+        if let raw = item.urlString, let url = URL(string: raw) {
+            reminder.url = url
+        } else {
+            reminder.url = nil
+        }
+    }
+
+    /// Pulls every synced field off an `EKReminder` into a fresh-or-existing `UserListItem`.
+    private static func pull(reminder: EKReminder, into item: UserListItem) {
+        item.text = reminder.title ?? ""
+        item.isCompleted = reminder.isCompleted
+        item.completedAt = reminder.completionDate
+        item.notes = (reminder.notes?.isEmpty ?? true) ? nil : reminder.notes
+        item.priority = reminder.priority
+        if let parsed = parseDueDate(reminder.dueDateComponents) {
+            item.dueDate = parsed.date
+            item.hasTime = parsed.hasTime
+        } else {
+            item.dueDate = nil
+            item.hasTime = false
+        }
+        item.urlString = reminder.url?.absoluteString
+    }
+
+    /// True if any synced field differs between the two sides — guards the LWW pass so we
+    /// skip already-aligned pairs without writing.
+    private static func differs(item: UserListItem, reminder: EKReminder) -> Bool {
+        if (reminder.title ?? "") != item.text { return true }
+        if reminder.isCompleted != item.isCompleted { return true }
+        if reminder.completionDate != item.completedAt { return true }
+        let ekNotes = (reminder.notes?.isEmpty ?? true) ? nil : reminder.notes
+        let smooryNotes = (item.notes?.isEmpty ?? true) ? nil : item.notes
+        if ekNotes != smooryNotes { return true }
+        if reminder.priority != max(0, min(9, item.priority)) { return true }
+        let smooryDC: DateComponents? = item.dueDate.map {
+            makeDueDateComponents(from: $0, hasTime: item.hasTime)
+        }
+        if dueDateComponentsDiffer(reminder.dueDateComponents, smooryDC) { return true }
+        if (reminder.url?.absoluteString ?? "") != (item.urlString ?? "") { return true }
+        return false
+    }
+
+    /// Builds a `DateComponents` from a `Date` for round-trip into EK. When the user
+    /// said "due Friday" (no time) we drop hour/minute so EK serializes as a date-only
+    /// reminder; when "Friday 3pm" we send the full set + tz.
+    private static func makeDueDateComponents(from date: Date, hasTime: Bool) -> DateComponents {
+        let cal = Calendar.current
+        if hasTime {
+            return cal.dateComponents(
+                [.year, .month, .day, .hour, .minute, .second, .timeZone],
+                from: date
+            )
+        } else {
+            return cal.dateComponents([.year, .month, .day], from: date)
+        }
+    }
+
+    /// Parses an EK `DateComponents` back into Smoory's (`Date`, `hasTime: Bool`) shape.
+    /// hour-present in the components → hasTime true.
+    private static func parseDueDate(_ components: DateComponents?) -> (date: Date, hasTime: Bool)? {
+        guard let components else { return nil }
+        let cal = Calendar.current
+        guard let date = cal.date(from: components) else { return nil }
+        let hasTime = components.hour != nil
+        return (date, hasTime)
+    }
+
+    /// Component-level inequality. `DateComponents` `==` treats two component bags with
+    /// different sets of populated fields as unequal, which would force spurious writes,
+    /// so we compare only the fields we actually round-trip.
+    private static func dueDateComponentsDiffer(_ a: DateComponents?, _ b: DateComponents?) -> Bool {
+        if a == nil && b == nil { return false }
+        if a == nil || b == nil { return true }
+        let aa = a!, bb = b!
+        return aa.year != bb.year
+            || aa.month != bb.month
+            || aa.day != bb.day
+            || aa.hour != bb.hour
+            || aa.minute != bb.minute
     }
 }

@@ -9,26 +9,105 @@ struct UserListItemRow: View {
     let kind: UserListKind
     let onToggle: () -> Void
     let onRemove: () -> Void
+    let onEdit: () -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             leadingControl
-            TextField("", text: $item.text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...3)
-                .strikethrough(kind == .checklist && item.isCompleted, color: .secondary)
-                .foregroundStyle(kind == .checklist && item.isCompleted ? .secondary : .primary)
-                .onSubmit { item.updatedAt = Date() }
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("", text: $item.text, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .lineLimit(1...3)
+                    .strikethrough(kind == .checklist && item.isCompleted, color: .secondary)
+                    .foregroundStyle(kind == .checklist && item.isCompleted ? .secondary : .primary)
+                    .onSubmit { item.updatedAt = Date() }
+                if showsBadges {
+                    badgeRow
+                }
+            }
             Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
         .contextMenu {
+            Button {
+                onEdit()
+            } label: {
+                Label("Edit details", systemImage: "pencil")
+            }
             Button(role: .destructive) {
                 onRemove()
             } label: {
                 Label("Remove item", systemImage: "trash")
             }
         }
+    }
+
+    private var showsBadges: Bool {
+        item.priorityBucket != .none
+            || item.dueDate != nil
+            || (item.notes?.isEmpty == false)
+            || item.url != nil
+    }
+
+    @ViewBuilder
+    private var badgeRow: some View {
+        HStack(spacing: 6) {
+            if let symbol = item.priorityBucket.symbolName {
+                Label(item.priorityBucket.displayLabel, systemImage: symbol)
+                    .labelStyle(.iconOnly)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(priorityColor(item.priorityBucket))
+                    .help("\(item.priorityBucket.displayLabel) priority")
+            }
+            if let due = item.dueDate {
+                Label(formattedDue(due, hasTime: item.hasTime), systemImage: "calendar")
+                    .font(.caption2)
+                    .foregroundStyle(isOverdue(due) ? .red : .secondary)
+                    .help("Due \(formattedDue(due, hasTime: item.hasTime))")
+            }
+            if (item.notes?.isEmpty == false) {
+                Image(systemName: "text.alignleft")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("Has notes")
+            }
+            if let url = item.url {
+                Link(destination: url) {
+                    Image(systemName: "link")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary)
+                .help(url.absoluteString)
+            }
+        }
+    }
+
+    private func priorityColor(_ bucket: UserListItem.PriorityBucket) -> Color {
+        switch bucket {
+        case .none: return .secondary
+        case .low: return .gray
+        case .medium: return .orange
+        case .high: return .red
+        }
+    }
+
+    private func formattedDue(_ date: Date, hasTime: Bool) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        if hasTime {
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+        } else {
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .none
+        }
+        return formatter.string(from: date)
+    }
+
+    private func isOverdue(_ date: Date) -> Bool {
+        guard kind == .checklist, !item.isCompleted else { return false }
+        return date < Date()
     }
 
     @ViewBuilder
