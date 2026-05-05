@@ -33,6 +33,7 @@ struct SettingsView: View {
     @State private var remindersAuthStatus: EKAuthorizationStatus = .notDetermined
     @State private var isSyncingReminders: Bool = false
     @State private var lastReminderSyncSummary: String?
+    @State private var permissionAlertContent: PermissionAlertContent?
     @State private var dayReviewVM: DayReviewSettingsViewModel?
     @State private var morningBriefVM: MorningBriefSettingsViewModel?
     @State private var weekReviewVM: WeekReviewSettingsViewModel?
@@ -321,6 +322,25 @@ struct SettingsView: View {
                     .foregroundStyle(.tertiary)
             }
         }
+        .alert(
+            permissionAlertContent?.title ?? "",
+            isPresented: permissionAlertBinding,
+            presenting: permissionAlertContent
+        ) { content in
+            if content.showOpenSettingsButton {
+                Button("Open System Settings") { openRemindersPrivacySettings() }
+            }
+            Button("OK", role: .cancel) {}
+        } message: { content in
+            Text(content.message)
+        }
+    }
+
+    private var permissionAlertBinding: Binding<Bool> {
+        Binding(
+            get: { permissionAlertContent != nil },
+            set: { if !$0 { permissionAlertContent = nil } }
+        )
     }
 
     private var remindersStatusIcon: String {
@@ -364,18 +384,57 @@ struct SettingsView: View {
             Task { @MainActor in
                 let status = await svc.requestPermission()
                 remindersAuthStatus = status
-                if status == .fullAccess {
+                switch status {
+                case .fullAccess:
                     svc.startObserving()
                     await runRemindersSyncNow()
-                } else {
-                    // Permission not granted — revert toggle so opt-in state matches reality.
+                case .writeOnly:
+                    // macOS Sequoia tier — sync needs read too. Surface explicitly so the
+                    // user understands why the toggle reverted; offer a System Settings
+                    // shortcut so they can grant full access in one click.
                     remindersSyncEnabled = false
+                    permissionAlertContent = PermissionAlertContent(
+                        title: "Reminders access is partial",
+                        message: "macOS granted Smoory write-only access. Sync needs to read your Reminders too. Open System Settings → Privacy & Security → Reminders and toggle Smoory to full access, then re-enable the sync.",
+                        showOpenSettingsButton: true
+                    )
+                case .denied, .restricted:
+                    remindersSyncEnabled = false
+                    permissionAlertContent = PermissionAlertContent(
+                        title: "Reminders access denied",
+                        message: "Smoory can't sync without Reminders access. Open System Settings → Privacy & Security → Reminders and toggle Smoory on, then re-enable the sync here.",
+                        showOpenSettingsButton: true
+                    )
+                case .notDetermined:
+                    // Request returned without a decision — odd but possible if the prompt
+                    // was dismissed with no selection. Revert and surface a soft message.
+                    remindersSyncEnabled = false
+                    permissionAlertContent = PermissionAlertContent(
+                        title: "Permission not granted",
+                        message: "The system permission prompt was dismissed without a decision. Try the toggle again.",
+                        showOpenSettingsButton: false
+                    )
+                @unknown default:
+                    remindersSyncEnabled = false
+                    permissionAlertContent = PermissionAlertContent(
+                        title: "Reminders access unavailable",
+                        message: "EventKit returned an unrecognized authorization state. Try opening System Settings → Privacy & Security → Reminders to inspect Smoory's access.",
+                        showOpenSettingsButton: true
+                    )
                 }
             }
         } else {
             svc.stopObserving()
             lastReminderSyncSummary = nil
         }
+    }
+
+    /// Opens System Settings on the Reminders privacy pane. Falls back to the top-level
+    /// Privacy & Security pane if the deep link is unavailable.
+    private func openRemindersPrivacySettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders")
+            ?? URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!
+        NSWorkspace.shared.open(url)
     }
 
     @MainActor
@@ -469,6 +528,15 @@ struct SettingsView: View {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         notificationStatus = settings.authorizationStatus
     }
+}
+
+/// Payload for the Reminders-permission alert. Wrapped in a struct so the alert(_:_:_:)
+/// presenting-binding can drive the destructive button label conditionally.
+private struct PermissionAlertContent: Identifiable {
+    let id = UUID()
+    let title: String
+    let message: String
+    let showOpenSettingsButton: Bool
 }
 
 private struct APIKeySectionContent: View {
