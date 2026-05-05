@@ -52,6 +52,9 @@ struct SmooryApp: App {
     /// `lists.remindersSyncEnabled` UserDefaults toggle exposed in Settings —
     /// off by default so first-run users don't auto-sync real Reminders data.
     @State private var remindersSyncService: RemindersSyncService?
+    /// 4.11 — voice dictation service. Single shared instance for the app's lifetime;
+    /// review sheets + main chat read it via @Environment(\.voiceCaptureService).
+    @State private var voiceCaptureService = VoiceCaptureService()
     /// Timestamp of the last scenePhase → background transition. Used to gate
     /// the 5-min background-fire trigger so Cmd-Tab task switches don't fire
     /// extraction every time.
@@ -108,6 +111,7 @@ struct SmooryApp: App {
                     .environment(\.scheduledActionService, scheduledActionService)
                     .environment(\.navigationState, navigationState)
                     .environment(\.remindersSyncService, remindersSyncService)
+                    .environment(\.voiceCaptureService, voiceCaptureService)
                     .sheet(isPresented: Binding(
                         get: {
                             pendingDayReview.actionToPresent != nil

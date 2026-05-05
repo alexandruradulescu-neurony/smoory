@@ -481,6 +481,8 @@
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Smoory reads your calendar to orient you and surface meeting context.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Smoory references your contacts when discussing the people you correspond with.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Smoory syncs your lists with Reminders.app so you can see them in iCloud, Siri, and across your Apple devices.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Smoory transcribes what you say during day reviews, week reviews, and end-of-day so you can dictate instead of typing.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Smoory records audio during voice dictation so it can be transcribed into the chat input.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -529,6 +531,8 @@
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Smoory reads your calendar to orient you and surface meeting context.";
 				INFOPLIST_KEY_NSContactsUsageDescription = "Smoory references your contacts when discussing the people you correspond with.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Smoory syncs your lists with Reminders.app so you can see them in iCloud, Siri, and across your Apple devices.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Smoory transcribes what you say during day reviews, week reviews, and end-of-day so you can dictate instead of typing.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Smoory records audio during voice dictation so it can be transcribed into the chat input.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

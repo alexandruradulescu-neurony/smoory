@@ -6,6 +6,10 @@ struct WeekReviewSheet: View {
 
     @FocusState private var inputFocused: Bool
 
+    /// 4.11 — voice dictation service from the app environment. nil if injection
+    /// fails (tests, previews); the mic button hides itself in that case.
+    @Environment(\.voiceCaptureService) private var voiceService
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -100,6 +104,9 @@ struct WeekReviewSheet: View {
                 .lineLimit(1...4)
                 .focused($inputFocused)
                 .onSubmit { Task { await viewModel.send() } }
+            if let voiceService {
+                VoiceMicButton(service: voiceService, draft: $viewModel.draft)
+            }
             Button {
                 Task { await viewModel.send() }
             } label: {

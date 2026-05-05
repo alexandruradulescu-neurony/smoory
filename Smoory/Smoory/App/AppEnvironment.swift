@@ -29,6 +29,10 @@ private struct RemindersSyncKey: EnvironmentKey {
     static let defaultValue: RemindersSyncService? = nil
 }
 
+private struct VoiceCaptureKey: EnvironmentKey {
+    static let defaultValue: VoiceCaptureService? = nil
+}
+
 extension EnvironmentValues {
     var hemaState: HemaState {
         get { self[HemaStateKey.self] }
@@ -60,5 +64,12 @@ extension EnvironmentValues {
     var remindersSyncService: RemindersSyncService? {
         get { self[RemindersSyncKey.self] }
         set { self[RemindersSyncKey.self] = newValue }
+    }
+    /// App-level voice-dictation service (4.11). Review sheets + main chat read this
+    /// to drive the mic button. Single shared instance; only one capture session can
+    /// be active at a time.
+    var voiceCaptureService: VoiceCaptureService? {
+        get { self[VoiceCaptureKey.self] }
+        set { self[VoiceCaptureKey.self] = newValue }
     }
 }
