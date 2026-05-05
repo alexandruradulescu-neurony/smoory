@@ -401,6 +401,15 @@ final class RemindersSyncService {
         } else {
             reminder.url = nil
         }
+        // 4.8d — recurrence round-trip. We persist the canonical RRULE string on the
+        // Smoory side; EK accepts the parsed `EKRecurrenceRule`. Clearing the Smoory-
+        // side string also clears EK's array.
+        if let raw = item.recurrenceRule, !raw.isEmpty,
+           let rule = RecurrenceRule.parse(raw) {
+            reminder.recurrenceRules = [rule.ekRule()]
+        } else {
+            reminder.recurrenceRules = nil
+        }
     }
 
     /// Pulls every synced field off an `EKReminder` into a fresh-or-existing `UserListItem`.
@@ -418,6 +427,15 @@ final class RemindersSyncService {
             item.hasTime = false
         }
         item.urlString = reminder.url?.absoluteString
+        // 4.8d — only round-trip the first rule (multi-rule chains are out of scope).
+        // If EK exposes a frequency we don't model, drop the Smoory-side string rather
+        // than store a partial representation.
+        if let first = reminder.recurrenceRules?.first,
+           let rule = RecurrenceRule(ek: first) {
+            item.recurrenceRule = rule.serialize()
+        } else {
+            item.recurrenceRule = nil
+        }
     }
 
     /// True if any synced field differs between the two sides — guards the LWW pass so we
@@ -435,6 +453,16 @@ final class RemindersSyncService {
         }
         if dueDateComponentsDiffer(reminder.dueDateComponents, smooryDC) { return true }
         if (reminder.url?.absoluteString ?? "") != (item.urlString ?? "") { return true }
+        // 4.8d — recurrence diff. Compare canonical RRULE strings on both sides.
+        let smooryRRULE = (item.recurrenceRule?.isEmpty ?? true) ? nil : item.recurrenceRule
+        let ekRRULE: String? = {
+            if let first = reminder.recurrenceRules?.first,
+               let parsed = RecurrenceRule(ek: first) {
+                return parsed.serialize()
+            }
+            return nil
+        }()
+        if smooryRRULE != ekRRULE { return true }
         return false
     }
 

@@ -240,6 +240,13 @@ struct UserListDetail: View {
                 Button("Restore") { restoreList() }
             } else {
                 Menu {
+                    if list.kind == .checklist {
+                        Picker("Auto-reset", selection: cadenceBinding) {
+                            ForEach(UserListResetCadence.allCases, id: \.self) { cadence in
+                                Text(cadence.displayLabel).tag(cadence)
+                            }
+                        }
+                    }
                     Button(role: .destructive) {
                         pendingArchive = true
                     } label: {
@@ -255,15 +262,41 @@ struct UserListDetail: View {
     }
 
     private var headerSubtitle: String {
+        let baseLine: String
         switch list.kind {
         case .checklist:
             let total = list.itemCount
             let done = list.completedCount
-            return total == 0 ? "Checklist — no items yet" : "Checklist — \(done) of \(total) done"
+            baseLine = total == 0 ? "Checklist — no items yet" : "Checklist — \(done) of \(total) done"
         case .notes:
             let total = list.itemCount
-            return total == 0 ? "Notes — no items yet" : "Notes — \(total) item(s)"
+            baseLine = total == 0 ? "Notes — no items yet" : "Notes — \(total) item(s)"
         }
+        guard list.resetCadence != .none else { return baseLine }
+        return "\(baseLine) · auto-resets \(list.resetCadence.displayLabel.lowercased())"
+    }
+
+    /// Two-way binding for the auto-reset cadence picker. Writes go to the SwiftData
+    /// row in a fresh context (matches the rest of the mutation path) and bump
+    /// `lastResetAt` so the next sweep doesn't fire immediately on a brand-new cadence.
+    private var cadenceBinding: Binding<UserListResetCadence> {
+        Binding(
+            get: { list.resetCadence },
+            set: { newValue in
+                let context = ModelContext(modelContainer)
+                let listID = list.id
+                let descriptor = FetchDescriptor<UserList>(predicate: #Predicate { $0.id == listID })
+                guard let resolved = try? context.fetch(descriptor).first else { return }
+                let now = Date()
+                resolved.resetCadence = newValue
+                if newValue != .none {
+                    // Stamp lastResetAt so we don't fire a reset immediately on enable.
+                    resolved.lastResetAt = now
+                }
+                resolved.updatedAt = now
+                try? context.save()
+            }
+        )
     }
 
     private var emptyState: some View {

@@ -120,6 +120,7 @@ struct SmooryApp: App {
                     .task {
                         initializeScheduledActionsIfNeeded()
                         initializeRemindersSyncIfNeeded()
+                        UserList.runResetSweepIfDue(modelContainer: sharedModelContainer)
                         await initializeHemaIfNeeded()
                         await requestNotificationPermissionIfNeeded()
                         startPollingIfNeeded()
@@ -128,6 +129,7 @@ struct SmooryApp: App {
                     }
                     .onChange(of: scenePhase) { _, newPhase in
                         if newPhase == .active {
+                            UserList.runResetSweepIfDue(modelContainer: sharedModelContainer)
                             Task { @MainActor in await refreshStaleReminders() }
                             // 4.4 — if app is returning from a 5+ min background,
                             // fire batched extraction over recent turns so a queued

@@ -35,6 +35,11 @@ final class UserListItem {
     var hasTime: Bool = false
     /// Optional URL the user attached to the item. Round-trips with `EKReminder.url`.
     var urlString: String?
+    /// Optional RFC 5545 RRULE string. nil = one-off item. Stored canonical so two
+    /// equivalent rules sort the same on disk; `RecurrenceRule.serialize` is the
+    /// canonical writer. Round-trips with `EKReminder.recurrenceRules` (we only round-
+    /// trip the first rule; multi-rule chains are out of scope for 4.8d).
+    var recurrenceRule: String?
 
     // MARK: - Todo-absorption fields (4.8b)
 
