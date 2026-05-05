@@ -11,6 +11,11 @@ struct UserListItemDetailSheet: View {
     let remindersSyncService: RemindersSyncService?
     let onClose: () -> Void
 
+    /// Live SwiftData context inherited from the surrounding view. Save mutates the
+    /// passed `item` in place so the row updates without waiting for an external
+    /// merge — same fix as `UserListDetail` (4.8d follow-up).
+    @Environment(\.modelContext) private var modelContext
+
     @State private var draftText: String
     @State private var draftNotes: String
     @State private var draftPriority: Int
@@ -93,30 +98,23 @@ struct UserListItemDetailSheet: View {
     }
 
     private func save() {
-        let context = ModelContext(modelContainer)
-        let itemID = item.id
-        let descriptor = FetchDescriptor<UserListItem>(predicate: #Predicate { $0.id == itemID })
-        guard let resolved = try? context.fetch(descriptor).first else {
-            onClose()
-            return
-        }
         let now = Date()
-        resolved.text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        item.text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedNotes = draftNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-        resolved.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
-        resolved.priority = max(0, min(9, draftPriority))
+        item.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
+        item.priority = max(0, min(9, draftPriority))
         if draftHasDueDate {
-            resolved.dueDate = draftDueDate
-            resolved.hasTime = draftHasTime
+            item.dueDate = draftDueDate
+            item.hasTime = draftHasTime
         } else {
-            resolved.dueDate = nil
-            resolved.hasTime = false
+            item.dueDate = nil
+            item.hasTime = false
         }
         let trimmedURL = draftURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-        resolved.urlString = trimmedURL.isEmpty ? nil : trimmedURL
-        resolved.updatedAt = now
-        resolved.list?.updatedAt = now
-        try? context.save()
+        item.urlString = trimmedURL.isEmpty ? nil : trimmedURL
+        item.updatedAt = now
+        item.list?.updatedAt = now
+        try? modelContext.save()
         remindersSyncService?.triggerReconcile()
         onClose()
     }

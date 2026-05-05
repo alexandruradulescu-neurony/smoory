@@ -167,6 +167,14 @@ struct UserListDetail: View {
     let modelContainer: ModelContainer
     let remindersSyncService: RemindersSyncService?
 
+    /// Live SwiftData context inherited from the surrounding NavigationStack. All UI
+    /// mutations (toggle, remove, archive, reorder, add) flow through this single
+    /// context so the @Bindable rows reflect the change immediately. Bug fixed in
+    /// the 4.8d follow-up: prior code created a fresh ModelContext per mutation,
+    /// which saved to the persistent store but left the in-memory @Bindable rows
+    /// stale — checkboxes wouldn't visually toggle.
+    @Environment(\.modelContext) private var modelContext
+
     @State private var newItemText: String = ""
     @State private var pendingItemRemoval: UserListItem?
     @State private var pendingArchive = false
@@ -276,25 +284,20 @@ struct UserListDetail: View {
         return "\(baseLine) · auto-resets \(list.resetCadence.displayLabel.lowercased())"
     }
 
-    /// Two-way binding for the auto-reset cadence picker. Writes go to the SwiftData
-    /// row in a fresh context (matches the rest of the mutation path) and bump
+    /// Two-way binding for the auto-reset cadence picker. Writes mutate the @Bindable
+    /// list directly so the menu's checkmark updates immediately, and bumps
     /// `lastResetAt` so the next sweep doesn't fire immediately on a brand-new cadence.
     private var cadenceBinding: Binding<UserListResetCadence> {
         Binding(
             get: { list.resetCadence },
             set: { newValue in
-                let context = ModelContext(modelContainer)
-                let listID = list.id
-                let descriptor = FetchDescriptor<UserList>(predicate: #Predicate { $0.id == listID })
-                guard let resolved = try? context.fetch(descriptor).first else { return }
                 let now = Date()
-                resolved.resetCadence = newValue
+                list.resetCadence = newValue
                 if newValue != .none {
-                    // Stamp lastResetAt so we don't fire a reset immediately on enable.
-                    resolved.lastResetAt = now
+                    list.lastResetAt = now
                 }
-                resolved.updatedAt = now
-                try? context.save()
+                list.updatedAt = now
+                try? modelContext.save()
             }
         )
     }
@@ -340,38 +343,28 @@ struct UserListDetail: View {
     private func commitNewItem() {
         let text = newItemText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !list.isArchived else { return }
-        let context = ModelContext(modelContainer)
-        // Re-fetch the list in this context — `list` is bound to the parent's context
-        // but mutations need to land in the same context we save.
-        let listID = list.id
-        let descriptor = FetchDescriptor<UserList>(predicate: #Predicate { $0.id == listID })
-        guard let resolved = try? context.fetch(descriptor).first else { return }
         let item = UserListItem()
         item.text = text
-        item.order = resolved.nextItemOrder
+        item.order = list.nextItemOrder
         let now = Date()
         item.createdAt = now
         item.updatedAt = now
-        item.list = resolved
-        context.insert(item)
-        resolved.updatedAt = now
-        try? context.save()
+        item.list = list
+        modelContext.insert(item)
+        list.updatedAt = now
+        try? modelContext.save()
         newItemText = ""
         remindersSyncService?.triggerReconcile()
     }
 
     private func toggleItem(_ item: UserListItem) {
         guard list.kind == .checklist else { return }
-        let context = ModelContext(modelContainer)
-        let itemID = item.id
-        let descriptor = FetchDescriptor<UserListItem>(predicate: #Predicate { $0.id == itemID })
-        guard let resolved = try? context.fetch(descriptor).first else { return }
         let now = Date()
-        resolved.isCompleted.toggle()
-        resolved.completedAt = resolved.isCompleted ? now : nil
-        resolved.updatedAt = now
-        resolved.list?.updatedAt = now
-        try? context.save()
+        item.isCompleted.toggle()
+        item.completedAt = item.isCompleted ? now : nil
+        item.updatedAt = now
+        list.updatedAt = now
+        try? modelContext.save()
         remindersSyncService?.triggerReconcile()
     }
 
@@ -383,16 +376,9 @@ struct UserListDetail: View {
         Task { @MainActor in
             await svc?.deleteEKReminder(eventKitIdentifier: ekIdentifier)
         }
-        let context = ModelContext(modelContainer)
-        let itemID = item.id
-        let descriptor = FetchDescriptor<UserListItem>(predicate: #Predicate { $0.id == itemID })
-        guard let resolved = try? context.fetch(descriptor).first else {
-            pendingItemRemoval = nil
-            return
-        }
-        resolved.list?.updatedAt = Date()
-        context.delete(resolved)
-        try? context.save()
+        list.updatedAt = Date()
+        modelContext.delete(item)
+        try? modelContext.save()
         pendingItemRemoval = nil
         remindersSyncService?.triggerReconcile()
     }
@@ -400,48 +386,30 @@ struct UserListDetail: View {
     private func moveItems(from source: IndexSet, to destination: Int) {
         var items = sortedItems
         items.move(fromOffsets: source, toOffset: destination)
-        // Reassign order monotonically and persist in this list's context.
-        let context = ModelContext(modelContainer)
         let now = Date()
         for (index, item) in items.enumerated() {
-            let itemID = item.id
-            let descriptor = FetchDescriptor<UserListItem>(predicate: #Predicate { $0.id == itemID })
-            if let resolved = try? context.fetch(descriptor).first {
-                resolved.order = index
-                resolved.updatedAt = now
-            }
+            item.order = index
+            item.updatedAt = now
         }
-        let listID = list.id
-        let listDescriptor = FetchDescriptor<UserList>(predicate: #Predicate { $0.id == listID })
-        if let resolvedList = try? context.fetch(listDescriptor).first {
-            resolvedList.updatedAt = now
-        }
-        try? context.save()
+        list.updatedAt = now
+        try? modelContext.save()
     }
 
     private func archiveList() {
-        let context = ModelContext(modelContainer)
-        let listID = list.id
-        let descriptor = FetchDescriptor<UserList>(predicate: #Predicate { $0.id == listID })
-        guard let resolved = try? context.fetch(descriptor).first else { return }
         let now = Date()
-        resolved.isArchived = true
-        resolved.archivedAt = now
-        resolved.updatedAt = now
-        try? context.save()
+        list.isArchived = true
+        list.archivedAt = now
+        list.updatedAt = now
+        try? modelContext.save()
         remindersSyncService?.triggerReconcile()
     }
 
     private func restoreList() {
-        let context = ModelContext(modelContainer)
-        let listID = list.id
-        let descriptor = FetchDescriptor<UserList>(predicate: #Predicate { $0.id == listID })
-        guard let resolved = try? context.fetch(descriptor).first else { return }
         let now = Date()
-        resolved.isArchived = false
-        resolved.archivedAt = nil
-        resolved.updatedAt = now
-        try? context.save()
+        list.isArchived = false
+        list.archivedAt = nil
+        list.updatedAt = now
+        try? modelContext.save()
         remindersSyncService?.triggerReconcile()
     }
 }
