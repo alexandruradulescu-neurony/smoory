@@ -72,6 +72,8 @@ You have access to:
 - complete_list_item to mark a checklist item done (or undo with completed=false)
 - remove_from_list to delete one item (confirmation card)
 - delete_list to archive a whole list (confirmation card; items preserved)
+- rename_list to change a list's title — accepts list_id or list_name plus new_title
+- reorder_list_items to set the display order of items — pass the FULL ordered array of every item id in the list (call get_list_items first to see the current ids)
 
 The orchestrator runs tool calls issued in the same turn in parallel. When you need data from two or more tools to answer well, request them together — don't chain them across turns.
 

@@ -26,6 +26,8 @@ enum ToolRegistry {
         CompleteListItemTool.self,
         RemoveFromListTool.self,
         DeleteListTool.self,
+        RenameListTool.self,
+        ReorderListItemsTool.self,
     ]
 
     static func tool(named name: String) -> (any Tool.Type)? {
