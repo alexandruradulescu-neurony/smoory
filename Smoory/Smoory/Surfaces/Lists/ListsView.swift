@@ -96,12 +96,17 @@ struct ListsView: View {
 
     @ViewBuilder
     private var emptyListsState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "list.bullet.rectangle")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text(showingArchived ? "No archived lists." : "No lists yet.")
-                .foregroundStyle(.secondary)
+        // F-24 audit fix: standardize on the shared `EmptyState` component instead
+        // of an ad-hoc VStack with hard-coded sizes. CTA button is composed below
+        // since EmptyState stays decorative (no embedded button slot).
+        VStack(spacing: 16) {
+            EmptyState(
+                symbol: "list.bullet.rectangle",
+                headline: showingArchived ? "No archived lists." : "No lists yet.",
+                detail: showingArchived
+                    ? nil
+                    : "Lists keep checklists, notes, and shopping items grouped."
+            )
             if !showingArchived {
                 Button("Create your first list") {
                     showingNewListSheet = true
@@ -110,7 +115,6 @@ struct ListsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 
     @ViewBuilder
@@ -123,13 +127,12 @@ struct ListsView: View {
             )
             .id(list.id)
         } else {
-            VStack(spacing: 8) {
-                Image(systemName: "sidebar.left")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-                Text("Select a list")
-                    .foregroundStyle(.secondary)
-            }
+            // F-24 audit fix: shared EmptyState instead of ad-hoc VStack.
+            EmptyState(
+                symbol: "sidebar.left",
+                headline: "Select a list",
+                detail: "Pick one from the sidebar, or create a new list."
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -307,21 +310,17 @@ struct UserListDetail: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: list.isArchived ? "archivebox" : "plus.rectangle.on.rectangle")
-                .font(.title)
-                .foregroundStyle(.secondary)
-            // F-11 audit fix: archived lists disable the input bar, so prompting the user
-            // to "add an item below" is misleading — the field is read-only. Branch the
-            // copy so an archived empty list points at the Restore button instead.
-            Text(list.isArchived
-                 ? "This list is archived. Restore it from the header to add items."
-                 : "Add an item below to get started.")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
+        // F-11 + F-24 audit fix: shared `EmptyState` and branch copy on archived
+        // status. Archived lists disable the input bar, so prompting the user to
+        // "add an item below" is misleading — point at the Restore button instead.
+        EmptyState(
+            symbol: list.isArchived ? "archivebox" : "plus.rectangle.on.rectangle",
+            headline: list.isArchived ? "List archived" : "No items yet",
+            detail: list.isArchived
+                ? "Restore it from the header to add items."
+                : "Add an item below to get started."
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 
     private var addItemRow: some View {
