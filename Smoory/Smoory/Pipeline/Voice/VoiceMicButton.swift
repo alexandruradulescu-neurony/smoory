@@ -20,7 +20,9 @@ struct VoiceMicButton: View {
 
     var body: some View {
         Button {
-            Task { await toggle() }
+            // @MainActor-explicit so the captured @State mutation in toggle()
+            // is guaranteed on main even if the Button hook doesn't inherit.
+            Task { @MainActor in await toggle() }
         } label: {
             Image(systemName: service.isCapturing ? "mic.fill" : "mic")
                 .foregroundStyle(service.isCapturing ? Color.red : Color.secondary)

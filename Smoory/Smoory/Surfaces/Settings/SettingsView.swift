@@ -67,7 +67,9 @@ struct SettingsView: View {
 
                 HStack {
                     Button {
-                        Task { await providerVM.testConnection() }
+                        // @MainActor-explicit so the VM mutation runs on main even if
+                        // the SwiftUI lifecycle hook doesn't propagate the actor.
+                        Task { @MainActor in await providerVM.testConnection() }
                     } label: {
                         if providerVM.isTestingConnection {
                             HStack(spacing: 6) {
@@ -239,7 +241,8 @@ struct SettingsView: View {
         .navigationTitle(surface.title)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
-            Task { await refreshNotificationStatus() }
+            // @MainActor-explicit — refreshNotificationStatus mutates @State.
+            Task { @MainActor in await refreshNotificationStatus() }
             refreshRemindersAuthStatus()
         }
     }
@@ -278,7 +281,8 @@ struct SettingsView: View {
             if remindersSyncEnabled, remindersAuthStatus == .fullAccess {
                 HStack {
                     Button {
-                        Task { await runRemindersSyncNow() }
+                        // @MainActor-explicit — runRemindersSyncNow mutates @State props.
+                        Task { @MainActor in await runRemindersSyncNow() }
                     } label: {
                         if isSyncingReminders {
                             HStack(spacing: 6) {
