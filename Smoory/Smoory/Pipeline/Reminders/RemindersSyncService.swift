@@ -514,13 +514,15 @@ final class RemindersSyncService {
     /// different sets of populated fields as unequal, which would force spurious writes,
     /// so we compare only the fields we actually round-trip.
     private static func dueDateComponentsDiffer(_ a: DateComponents?, _ b: DateComponents?) -> Bool {
-        if a == nil && b == nil { return false }
-        if a == nil || b == nil { return true }
-        let aa = a!, bb = b!
-        return aa.year != bb.year
-            || aa.month != bb.month
-            || aa.day != bb.day
-            || aa.hour != bb.hour
-            || aa.minute != bb.minute
+        switch (a, b) {
+        case (nil, nil): return false
+        case (nil, _), (_, nil): return true
+        case let (aa?, bb?):
+            return aa.year != bb.year
+                || aa.month != bb.month
+                || aa.day != bb.day
+                || aa.hour != bb.hour
+                || aa.minute != bb.minute
+        }
     }
 }

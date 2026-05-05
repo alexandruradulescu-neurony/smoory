@@ -94,7 +94,9 @@ struct FactsListView: View {
 
     private var tagButtonLabel: String {
         if viewModel.selectedTags.isEmpty { return "Tags" }
-        if viewModel.selectedTags.count == 1 { return "Tag: \(viewModel.selectedTags.first!)" }
+        if viewModel.selectedTags.count == 1, let tag = viewModel.selectedTags.first {
+            return "Tag: \(tag)"
+        }
         return "Tags (\(viewModel.selectedTags.count))"
     }
 

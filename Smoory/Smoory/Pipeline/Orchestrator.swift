@@ -44,6 +44,11 @@ final class Orchestrator {
         var rounds = 0
 
         while true {
+            // Bail out cleanly if the surrounding Task was cancelled (user navigated
+            // away mid-conversation, sheet dismissed, etc.). Without this guard the
+            // loop kept making LLM calls + landing tool side effects after cancel.
+            try Task.checkCancellation()
+
             let response: LLMResponse
             do {
                 response = try await client.complete(

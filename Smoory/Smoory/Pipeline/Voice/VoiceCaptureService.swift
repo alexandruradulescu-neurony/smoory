@@ -80,8 +80,12 @@ final class VoiceCaptureService {
 
         liveTranscript = ""
         self.task = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
-            Task { @MainActor in
+            // Inner task uses [weak self] for symmetry — outer closure is already
+            // weak, but the inner Task strongly captured self via `guard let self`.
+            // Each result emission would have spawned a new strong-self task that
+            // outlived the closure. Now both layers let go cleanly on tear-down.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 if let result {
                     self.liveTranscript = result.bestTranscription.formattedString
                 }

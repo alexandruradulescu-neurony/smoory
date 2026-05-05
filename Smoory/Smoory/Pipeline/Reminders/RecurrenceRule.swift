@@ -279,8 +279,8 @@ extension RecurrenceRule {
         if let ekEnd = ek.recurrenceEnd {
             if ekEnd.occurrenceCount > 0 {
                 resolvedEnd = .count(ekEnd.occurrenceCount)
-            } else if ekEnd.endDate != nil {
-                resolvedEnd = .until(ekEnd.endDate!)
+            } else if let endDate = ekEnd.endDate {
+                resolvedEnd = .until(endDate)
             } else {
                 resolvedEnd = .never
             }

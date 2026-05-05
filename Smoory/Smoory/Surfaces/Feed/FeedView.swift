@@ -96,9 +96,10 @@ private struct FeedListContent: View {
             .listRowSeparator(.hidden)
         }
         .task { await calendar.load() }
-        .task(id: activeFeedItems.count) {
-            await sweepDuplicateMorningBriefs()
-        }
+        // One-shot per view appearance. Pre-fix the .task(id:) re-fired every time
+        // the feed item count changed — after the first sweep there's nothing left
+        // to do, so re-running was wasted CPU on every confirmed candidate.
+        .task { await sweepDuplicateMorningBriefs() }
     }
 
     /// Permanently mark older active morning briefs as `.actedUpon` so the @Query
