@@ -63,14 +63,40 @@ final class EndOfDayViewModel {
         guard turns.isEmpty else { return }
         _ = try? scheduledActionService.markFiring(actionID: action.id)
 
+        // F-19 audit fix: when both day review and end-of-day fire the same evening,
+        // the rituals can feel redundant. If a day review already completed today,
+        // prepend a short context line so the user feels the operational distinction
+        // (day review = reflective, end-of-day = wrap up + line up tomorrow).
         let opener = ChatViewModel.Turn(
             id: UUID(),
             speaker: .assistant,
-            text: EndOfDayPrompts.randomOpener(),
+            text: composedOpener(),
             usedToolNames: nil
         )
         turns.append(opener)
         Task { try? await persistTurn(opener, role: .assistant) }
+    }
+
+    private func composedOpener() -> String {
+        let opener = EndOfDayPrompts.randomOpener()
+        guard hasCompletedDayReviewToday() else { return opener }
+        return "Day review's done — let's tie up loose ends + line up tomorrow.\n\n\(opener)"
+    }
+
+    /// True iff a `dayReview` ScheduledAction with status `.completed` exists for
+    /// today (local startOfDay anchor). Best-effort: fetch errors fall through to
+    /// false so the opener still fires with the default copy.
+    private func hasCompletedDayReviewToday() -> Bool {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? startOfToday
+        guard let completed = try? scheduledActionService.completedActions(of: .dayReview) else {
+            return false
+        }
+        return completed.contains { row in
+            guard let when = row.completedAt else { return false }
+            return when >= startOfToday && when < startOfTomorrow
+        }
     }
 
     func send() async {
