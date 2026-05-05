@@ -155,6 +155,10 @@ struct SmooryApp: App {
                                 fireBackgroundExtraction()
                             }
                             lastBackgroundedAt = nil
+                            // Restart the 5-minute polling tick when we come back
+                            // foreground. startPollingIfNeeded() short-circuits if
+                            // pollingTimer is already non-nil.
+                            startPollingIfNeeded()
                         } else if newPhase == .background || newPhase == .inactive {
                             // Track background entry; the active-resume branch checks
                             // elapsed time before firing extraction so quick task
@@ -162,6 +166,13 @@ struct SmooryApp: App {
                             if lastBackgroundedAt == nil {
                                 lastBackgroundedAt = Date()
                             }
+                            // Switch off the polling timer while backgrounded so we
+                            // don't burn battery firing processOverdue + calendar
+                            // refresh every 5 minutes when the user isn't looking.
+                            // Notification arrivals + scenePhase resume both still
+                            // dispatch missed actions, so a paused poll is safe.
+                            pollingTimer?.invalidate()
+                            pollingTimer = nil
                         }
                     }
 
