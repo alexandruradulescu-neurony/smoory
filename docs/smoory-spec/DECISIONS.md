@@ -569,4 +569,34 @@ Keep this document up to date as decisions evolve. Future-you (and Claude Code) 
 
 ---
 
+## 4.6 — User Lists feature (2026-05-04)
+
+**Decision:** Add `UserList` + `UserListItem` SwiftData entities, 7 chat tools, and a new `Lists` sidebar surface for user-curated collections distinct from `Todo`.
+
+**Why distinct from Todo:** `Todo` is "tactical commitment with deadline/priority". List items are "curated entries in a collection" — books to read, packing checklists, gift ideas. Conflating them via `Todo` + parent grouping would muddy day-review/week-review semantics that operate on `Todo` as commitments.
+
+**Per-list kind** (`checklist` | `notes`) chosen at create time. `notes` kind has the `isCompleted` field on the model but UI hides the checkbox; `complete_list_item` tool returns an error on notes-kind lists rather than silently no-op'ing — surfaces LLM mistakes early. The field is kept on the model so a list can be re-typed `checklist`→`notes` (or vice versa) without data loss.
+
+**Tool tier policy:** writes silent except `remove_from_list` and `delete_list` (destructive → confirmation card). Symmetric with `WriteMemoryFactTool`'s silent fact-write pattern; reserves cards for actions that can't be casually undone. Read tools (`get_lists`, `get_list_items`) silent.
+
+**Name/id resolution** in tools: every write tool that targets an existing list accepts `list_id` (UUID) OR `list_name` (case-insensitive trimmed match). 0 matches → error; 2+ matches → error directing the LLM to use `list_id`. Same dual-key for `add_to_list`. Item-level tools (`complete_list_item`, `remove_from_list`) take `item_id` only — items don't have unique names.
+
+**Naming:** `UserList`/`UserListItem` to avoid `SwiftUI.List` collision in any file that imports SwiftUI. Considered `Listing`/`Roster`/`Catalog`; rejected as semantically less clear.
+
+**Item ordering:** `UserListItem.order: Int` for stable display order. `add_to_list` always appends (sets order to current max + 1). Reordering happens in the UI via drag — no `reorder_list_items` tool in v1.
+
+**Title uniqueness:** not enforced. Two lists named "Reading list" are allowed. `add_to_list` by name returns an error in that case so the user/LLM resolves.
+
+**Duplicate item text:** allowed. Groceries can have "milk" twice if buying two bottles. Dedup left to the user.
+
+**List delete:** soft delete (`isArchived = true`, `archivedAt = now`); items stay attached for restore. UI exposes "Show archived" toggle. Permanent purge deferred to a debug tool if ever needed.
+
+**Item delete:** hard delete. Items are cheap; soft-delete adds UI complexity for no real win.
+
+**Migration:** none — green-field, fictitious data per user instruction. SwiftData auto-handles new entity addition.
+
+**Out of scope for 4.6:** `rename_list` and `reorder_list_items` tools (UI-only for v1), shared/collaborative lists, list templates, list import/export, recurring auto-populated lists.
+
+---
+
 End of spec. Time to build.

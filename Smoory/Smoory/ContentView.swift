@@ -37,6 +37,7 @@ struct ContentView: View {
             switch resolvedSelection {
             case .feed: FeedView()
             case .todos: TodosView()
+            case .lists: ListsView()
             case .chat: ChatView()
             case .memory: MemoryView()
             case .settings: SettingsView()

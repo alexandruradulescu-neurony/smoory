@@ -79,6 +79,8 @@ struct SmooryApp: App {
             CandidateWrite.self,
             ScheduledAction.self,
             WeekReviewSummary.self,
+            UserList.self,
+            UserListItem.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
