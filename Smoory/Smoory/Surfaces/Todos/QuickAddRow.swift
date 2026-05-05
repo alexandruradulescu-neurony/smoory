@@ -6,6 +6,8 @@ import SwiftUI
 struct QuickAddRow: View {
     let modelContainer: ModelContainer
 
+    @Environment(\.errorBus) private var errorBus
+
     @State private var title: String = ""
     @State private var hasDueDate: Bool = false
     @State private var dueDate: Date = Date()
@@ -89,6 +91,7 @@ struct QuickAddRow: View {
             isFocused = true
         } catch {
             print("[quickadd] create failed: \(error)")
+            errorBus?.report("Couldn't add \"\(trimmed)\": \(error.localizedDescription)")
         }
     }
 }

@@ -15,6 +15,8 @@ struct UserListItemDetailSheet: View {
     /// passed `item` in place so the row updates without waiting for an external
     /// merge — same fix as `UserListDetail` (4.8d follow-up).
     @Environment(\.modelContext) private var modelContext
+    /// Surface save failures via the shared toast bus.
+    @Environment(\.errorBus) private var errorBus
 
     @State private var draftText: String
     @State private var draftNotes: String
@@ -118,7 +120,12 @@ struct UserListItemDetailSheet: View {
         item.urlString = trimmedURL.isEmpty ? nil : trimmedURL
         item.updatedAt = now
         item.list?.updatedAt = now
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorBus?.report("Couldn't save changes: \(error.localizedDescription)")
+            return
+        }
         remindersSyncService?.triggerReconcile()
         onClose()
     }

@@ -8,6 +8,8 @@ struct NewListSheet: View {
     let onCreated: (UUID) -> Void
     let onCancel: () -> Void
 
+    @Environment(\.errorBus) private var errorBus
+
     @State private var title: String = ""
     @State private var kind: UserListKind = .checklist
     @FocusState private var titleFieldFocused: Bool
@@ -73,6 +75,7 @@ struct NewListSheet: View {
             onCreated(list.id)
         } catch {
             print("[lists] create failed: \(error)")
+            errorBus?.report("Couldn't create \"\(trimmed)\": \(error.localizedDescription)")
         }
     }
 }

@@ -1,3 +1,4 @@
+import Speech
 import SwiftUI
 
 /// 4.11 — reusable mic button. Tapping starts dictation via the shared
@@ -7,6 +8,10 @@ import SwiftUI
 struct VoiceMicButton: View {
     @Bindable var service: VoiceCaptureService
     @Binding var draft: String
+
+    /// Surface "couldn't start the mic" via the shared toast — replaces the
+    /// previous `print()`-and-no-feedback path.
+    @Environment(\.errorBus) private var errorBus
 
     /// Snapshot of the draft text taken at the moment capture starts. The live
     /// transcript is appended to this snapshot each frame so partial corrections
@@ -41,10 +46,22 @@ struct VoiceMicButton: View {
             snapshot = draft
             let started = await service.start()
             if !started {
-                // Permission denied or recognizer unavailable. Surface in UI later
-                // (e.g., a toast); for now, no-op so the button doesn't get stuck.
                 print("[voice] start failed — auth or recognizer unavailable")
+                errorBus?.report(failureMessage())
             }
         }
+    }
+
+    /// Branches the toast message based on which permission tier failed so the
+    /// user knows where to go next. Speech and mic are independent permissions
+    /// on macOS — either can be the blocker.
+    private func failureMessage() -> String {
+        if service.speechAuth == .denied || service.speechAuth == .restricted {
+            return "Speech recognition is denied. Enable it in System Settings → Privacy & Security → Speech Recognition, then try again."
+        }
+        if !service.micAuthGranted {
+            return "Microphone access is required. Check System Settings → Privacy & Security → Microphone, then try again."
+        }
+        return "Mic unavailable. The recognizer didn't start — try again, or restart Smoory if it persists."
     }
 }

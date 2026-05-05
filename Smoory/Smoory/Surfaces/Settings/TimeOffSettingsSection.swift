@@ -52,6 +52,8 @@ private struct OffPeriodRow: View {
     @Bindable var period: OffPeriod
     let modelContext: ModelContext
 
+    @Environment(\.errorBus) private var errorBus
+
     @State private var pendingDelete = false
 
     var body: some View {
@@ -90,7 +92,12 @@ private struct OffPeriodRow: View {
     }
 
     private func delete() {
+        let label = period.displayLabel
         modelContext.delete(period)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorBus?.report("Couldn't delete \"\(label)\": \(error.localizedDescription)")
+        }
     }
 }

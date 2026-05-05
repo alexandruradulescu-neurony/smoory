@@ -187,6 +187,10 @@ struct UserListDetail: View {
     /// which saved to the persistent store but left the in-memory @Bindable rows
     /// stale — checkboxes wouldn't visually toggle.
     @Environment(\.modelContext) private var modelContext
+    /// Surface mutation failures (toggle / remove / save / move / archive)
+    /// instead of swallowing them via `try?`. Same pattern already used in
+    /// the Todos surface.
+    @Environment(\.errorBus) private var errorBus
 
     @State private var newItemText: String = ""
     @State private var pendingItemRemoval: UserListItem?
@@ -319,7 +323,11 @@ struct UserListDetail: View {
                     list.lastResetAt = now
                 }
                 list.updatedAt = now
-                try? modelContext.save()
+                do {
+                    try modelContext.save()
+                } catch {
+                    errorBus?.report("Couldn't update reset cadence: \(error.localizedDescription)")
+                }
             }
         )
     }
@@ -376,7 +384,12 @@ struct UserListDetail: View {
         item.list = list
         modelContext.insert(item)
         list.updatedAt = now
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorBus?.report("Couldn't add \"\(text)\": \(error.localizedDescription)")
+            return
+        }
         newItemText = ""
         remindersSyncService?.triggerReconcile()
     }
@@ -388,7 +401,12 @@ struct UserListDetail: View {
         item.completedAt = item.isCompleted ? now : nil
         item.updatedAt = now
         list.updatedAt = now
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorBus?.report("Couldn't update \"\(item.text)\": \(error.localizedDescription)")
+            return
+        }
         remindersSyncService?.triggerReconcile()
     }
 
@@ -400,9 +418,16 @@ struct UserListDetail: View {
         Task { @MainActor in
             await svc?.deleteEKReminder(eventKitIdentifier: ekIdentifier)
         }
+        let removedText = item.text
         list.updatedAt = Date()
         modelContext.delete(item)
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorBus?.report("Couldn't remove \"\(removedText)\": \(error.localizedDescription)")
+            pendingItemRemoval = nil
+            return
+        }
         pendingItemRemoval = nil
         remindersSyncService?.triggerReconcile()
     }
@@ -416,7 +441,11 @@ struct UserListDetail: View {
             item.updatedAt = now
         }
         list.updatedAt = now
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorBus?.report("Couldn't reorder items: \(error.localizedDescription)")
+        }
     }
 
     private func archiveList() {
@@ -424,7 +453,12 @@ struct UserListDetail: View {
         list.isArchived = true
         list.archivedAt = now
         list.updatedAt = now
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorBus?.report("Couldn't archive list: \(error.localizedDescription)")
+            return
+        }
         remindersSyncService?.triggerReconcile()
     }
 
@@ -433,7 +467,12 @@ struct UserListDetail: View {
         list.isArchived = false
         list.archivedAt = nil
         list.updatedAt = now
-        try? modelContext.save()
+        do {
+            try modelContext.save()
+        } catch {
+            errorBus?.report("Couldn't restore list: \(error.localizedDescription)")
+            return
+        }
         remindersSyncService?.triggerReconcile()
     }
 }
