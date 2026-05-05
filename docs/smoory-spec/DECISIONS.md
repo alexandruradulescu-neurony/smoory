@@ -780,4 +780,30 @@ Single-user fictitious-data context (current state of Smoory) lets us skip this 
 
 ---
 
+## Rejected `.fact` candidates are permanent dismissals (within their extraction window)
+
+**Decision:** When the user rejects a `.fact` `CandidateWrite`, the same normalised body must never re-surface as a new pending fact candidate while the originating chat turn is still in any extractor's lookback window. Dedup in `BatchedFactExtractor.persistCandidates` includes rejected rows, not just pending ones.
+
+**Why:** Pre-fix, the dedup descriptor filtered to `statusRaw == 0` (pending only). Every app launch fires `.appLaunchGap` extraction over the last 24h of chat turns. A rejected fact whose originating turn was within that window got re-extracted as a fresh pending candidate on every launch — the user kept rejecting the same proposal indefinitely. Reading "I have rejected this fact" as scoped only to the specific candidate row, not to the body itself, was the wrong default.
+
+**Scope:** `.fact` only. Other candidate types (`.todo`, `.goal`, `.person`, etc.) keep their existing per-row rejection semantics — re-flag if the user re-mentions, since those are stronger signals (a todo re-proposed is usually a real re-ask).
+
+**Out of scope:** This decision does NOT change rejection semantics for `.supersession` candidates. Those are rejected via "Both true" and the underlying facts both stay live; the `(newFactID, oldFactID)` idempotency is a separate concern.
+
+---
+
+## Rejected `.fact` candidates are pruned at 24h (TTL = max extraction window)
+
+**Decision:** Hard-delete rejected `.fact` `CandidateWrite` rows whose `createdAt` is older than 24h. Runs at app launch, before hema-driven gap extraction, via `CandidateWrite.pruneStaleRejectedFacts(modelContainer:)`.
+
+**Why:** Rejected fact candidates earn their keep ONLY as dedup tombstones — preventing the same body from re-surfacing while its originating turn is still in some extractor's lookback. The widest extraction window is 24h (`.appLaunchGap`, `.scenePhaseBackground`, `.manualDebug` all read 24h; `.idlePause` is shorter; `.dayReviewPiggyback` is today-only). Past 24h, no extractor can re-propose the body, so the row's tombstone job is done. Without pruning, the user's testing or routine rejection accumulates rejected rows forever in the SwiftData store and the Feed's `.rejected` filter — dead weight with no remaining function.
+
+**Why `createdAt`, not `reviewedAt`:** `createdAt` is when extraction inserted the candidate. The originating chat turn is at-or-before that. `createdAt > 24h ago` therefore guarantees the turn is also outside every extraction window. `reviewedAt` would be sloppier — a user who rejects hours after extraction would extend the tombstone life past when it can do anything useful.
+
+**Audit trail:** Saved-fact audit lives on `SemanticFact` rows in hema, not on rejected candidates. No information is lost by hard-deleting an aged-out rejection.
+
+**Trade-off accepted:** The Feed's `.rejected` filter loses access to rejections older than 24h. Acceptable for a single-user personal assistant — there is no scenario where a user needs to scroll back through last week's dismissed fact proposals.
+
+---
+
 End of spec. Time to build.

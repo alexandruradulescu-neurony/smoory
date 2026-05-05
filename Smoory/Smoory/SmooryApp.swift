@@ -137,6 +137,11 @@ struct SmooryApp: App {
                         initializeScheduledActionsIfNeeded()
                         initializeRemindersSyncIfNeeded()
                         UserList.runResetSweepIfDue(modelContainer: sharedModelContainer)
+                        // Tombstone-prune rejected .fact candidates older than the
+                        // 24h max-extraction window. Runs BEFORE the hema-driven
+                        // gap extractor so the dedup set the extractor builds is
+                        // already trimmed.
+                        CandidateWrite.pruneStaleRejectedFacts(modelContainer: sharedModelContainer)
                         await initializeHemaIfNeeded()
                         await requestNotificationPermissionIfNeeded()
                         startPollingIfNeeded()

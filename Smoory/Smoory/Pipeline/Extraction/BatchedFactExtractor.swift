@@ -157,13 +157,15 @@ final class BatchedFactExtractor {
         let context = ModelContext(modelContainer)
         var inserted = 0
 
-        // Dedup against existing pending .fact candidates in the same trigger pass
-        // (4.1 cross-batch dedup catches the rest at insert time).
+        // Dedup against ALL existing .fact candidates regardless of status. Pending
+        // ones would create Feed duplicates; rejected ones must not re-surface
+        // (the user already dismissed that body — re-proposing it on every launch
+        // gap-extraction within the 24h window is the nag the prune-sweep + this
+        // dedup were added to fix). Confirmed / autoApplied are also covered for
+        // free — no point re-asking about a fact already saved.
         let factRaw = CandidateType.fact.rawValue
         let descriptor = FetchDescriptor<CandidateWrite>(
-            predicate: #Predicate<CandidateWrite> {
-                $0.statusRaw == 0 && $0.typeRaw == factRaw
-            }
+            predicate: #Predicate<CandidateWrite> { $0.typeRaw == factRaw }
         )
         let existing = (try? context.fetch(descriptor)) ?? []
         var seenKeys = Set(existing.map {

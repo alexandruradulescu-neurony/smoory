@@ -1,6 +1,13 @@
 import Foundation
 import SwiftData
 
+/// Max lookback window across all BatchedFactExtractor triggers (appLaunchGap,
+/// scenePhaseBackground, manualDebug all read 24h of turns; idlePause /
+/// dayReviewPiggyback read shorter windows). Once a rejected `.fact` candidate
+/// is older than this, no extraction trigger can re-propose its body, so the
+/// row's tombstone job is done and `pruneStaleRejectedFacts` deletes it.
+private let factCandidateRejectionTombstoneTTL: TimeInterval = 86_400
+
 @Model
 final class CandidateWrite {
     var id: UUID = UUID()
@@ -49,6 +56,37 @@ extension CandidateWrite {
         let proposed = proposedTitle.trimmingCharacters(in: .whitespaces)
         if !proposed.isEmpty { return proposed }
         return Self.shortenSentence(effectiveContent)
+    }
+
+    /// Hard-deletes rejected `.fact` candidates older than the max extraction
+    /// window (24h). After that age, no extraction trigger can re-propose the
+    /// same body — the tombstone job is done. Prevents long-term accumulation
+    /// of rejected rows in the Feed and SwiftData store. Called from
+    /// `SmooryApp`'s launch `.task` before hema-driven gap extraction fires.
+    @MainActor
+    static func pruneStaleRejectedFacts(modelContainer: ModelContainer) {
+        let context = ModelContext(modelContainer)
+        let factRaw = CandidateType.fact.rawValue
+        let rejectedRaw = CandidateStatus.rejected.rawValue
+        let descriptor = FetchDescriptor<CandidateWrite>(
+            predicate: #Predicate<CandidateWrite> {
+                $0.typeRaw == factRaw && $0.statusRaw == rejectedRaw
+            }
+        )
+        guard let rows = try? context.fetch(descriptor), !rows.isEmpty else { return }
+        let cutoff = Date().addingTimeInterval(-factCandidateRejectionTombstoneTTL)
+        var deleted = 0
+        for row in rows where row.createdAt < cutoff {
+            context.delete(row)
+            deleted += 1
+        }
+        guard deleted > 0 else { return }
+        do {
+            try context.save()
+            print("[candidate-write] pruned \(deleted) stale rejected .fact candidate(s)")
+        } catch {
+            print("[candidate-write] prune save failed: \(error)")
+        }
     }
 
     /// Heuristic fallback: drop common third-person prefixes ("User wants to ...") and
