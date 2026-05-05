@@ -65,6 +65,7 @@ enum CompleteListItemTool: Tool {
             item.updatedAt = now
             item.list?.updatedAt = now
             try modelContext.save()
+            await context.services.remindersSyncService?.triggerReconcile()
 
             let payload = OutputPayload(
                 id: item.id.uuidString,

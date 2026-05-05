@@ -72,6 +72,7 @@ enum RenameListTool: Tool {
             list.title = trimmedTitle
             list.updatedAt = now
             try modelContext.save()
+            await context.services.remindersSyncService?.triggerReconcile()
 
             let payload = OutputPayload(
                 id: list.id.uuidString,

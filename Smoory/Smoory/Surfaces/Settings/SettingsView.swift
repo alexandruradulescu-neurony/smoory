@@ -1,3 +1,4 @@
+import EventKit
 import SwiftData
 import SwiftUI
 import UserNotifications
@@ -24,9 +25,14 @@ struct SettingsView: View {
 
     @Environment(\.chatViewModel) private var chatViewModel
     @Environment(\.scheduledActionService) private var scheduledActionService
+    @Environment(\.remindersSyncService) private var remindersSyncService
     @Environment(\.modelContext) private var modelContext
     @State private var onboardingFeedback: String?
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
+    @AppStorage(RemindersSyncService.enabledDefaultsKey) private var remindersSyncEnabled: Bool = false
+    @State private var remindersAuthStatus: EKAuthorizationStatus = .notDetermined
+    @State private var isSyncingReminders: Bool = false
+    @State private var lastReminderSyncSummary: String?
     @State private var dayReviewVM: DayReviewSettingsViewModel?
     @State private var morningBriefVM: MorningBriefSettingsViewModel?
     @State private var weekReviewVM: WeekReviewSettingsViewModel?
@@ -109,6 +115,8 @@ struct SettingsView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+
+            remindersSyncSection
 
             Section("Onboarding") {
                 HStack {
@@ -234,6 +242,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             Task { await refreshNotificationStatus() }
+            refreshRemindersAuthStatus()
             if dayReviewVM == nil {
                 dayReviewVM = DayReviewSettingsViewModel(
                     modelContainer: modelContext.container,
@@ -252,6 +261,137 @@ struct SettingsView: View {
                     service: scheduledActionService
                 )
             }
+        }
+    }
+
+    // MARK: - Reminders sync section (4.7)
+
+    @ViewBuilder
+    private var remindersSyncSection: some View {
+        Section("Reminders sync") {
+            Toggle("Sync lists with Reminders.app", isOn: $remindersSyncEnabled)
+                .onChange(of: remindersSyncEnabled) { _, newValue in
+                    handleRemindersToggle(newValue)
+                }
+
+            HStack {
+                Image(systemName: remindersStatusIcon)
+                    .foregroundStyle(remindersStatusColor)
+                Text(remindersStatusText)
+                    .font(.smoory_body)
+                Spacer()
+            }
+
+            if let summary = lastReminderSyncSummary {
+                Text(summary)
+                    .font(.smoory_caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if remindersSyncEnabled, remindersAuthStatus == .fullAccess {
+                HStack {
+                    Button {
+                        Task { await runRemindersSyncNow() }
+                    } label: {
+                        if isSyncingReminders {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("Syncing…")
+                            }
+                        } else {
+                            Text("Sync now")
+                        }
+                    }
+                    .disabled(isSyncingReminders)
+                    Spacer()
+                }
+            }
+
+            if remindersAuthStatus == .denied || remindersAuthStatus == .restricted {
+                Text("Reminders access denied. Enable in System Settings → Privacy & Security → Reminders, then reopen Smoory.")
+                    .font(.smoory_caption)
+                    .foregroundStyle(.tertiary)
+            } else if remindersSyncEnabled, remindersAuthStatus == .fullAccess {
+                Text("Smoory's checklist-kind lists round-trip with Reminders.app. Notes-kind lists stay local. Last-writer-wins on conflicts.")
+                    .font(.smoory_caption)
+                    .foregroundStyle(.tertiary)
+            } else if !remindersSyncEnabled {
+                Text("Off by default. Enabling will request Reminders access and import every existing Reminders list as a Smoory list on first sync.")
+                    .font(.smoory_caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private var remindersStatusIcon: String {
+        switch remindersAuthStatus {
+        case .fullAccess: return remindersSyncEnabled ? "arrow.triangle.2.circlepath.circle.fill" : "circle"
+        case .denied, .restricted: return "exclamationmark.triangle"
+        case .notDetermined: return "questionmark.circle"
+        case .writeOnly: return "pencil.circle"
+        @unknown default: return "questionmark.circle"
+        }
+    }
+
+    private var remindersStatusColor: Color {
+        switch remindersAuthStatus {
+        case .fullAccess: return remindersSyncEnabled ? .green : .secondary
+        case .denied, .restricted: return .orange
+        case .notDetermined, .writeOnly: return .secondary
+        @unknown default: return .secondary
+        }
+    }
+
+    private var remindersStatusText: String {
+        switch remindersAuthStatus {
+        case .fullAccess:
+            return remindersSyncEnabled ? "Authorized — sync active" : "Authorized — sync paused"
+        case .denied: return "Denied"
+        case .restricted: return "Restricted"
+        case .notDetermined: return "Permission will be requested"
+        case .writeOnly: return "Write-only access (insufficient — sync needs full access)"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    private func refreshRemindersAuthStatus() {
+        remindersAuthStatus = EKEventStore.authorizationStatus(for: .reminder)
+    }
+
+    private func handleRemindersToggle(_ newValue: Bool) {
+        guard let svc = remindersSyncService else { return }
+        if newValue {
+            Task { @MainActor in
+                let status = await svc.requestPermission()
+                remindersAuthStatus = status
+                if status == .fullAccess {
+                    svc.startObserving()
+                    await runRemindersSyncNow()
+                } else {
+                    // Permission not granted — revert toggle so opt-in state matches reality.
+                    remindersSyncEnabled = false
+                }
+            }
+        } else {
+            svc.stopObserving()
+            lastReminderSyncSummary = nil
+        }
+    }
+
+    @MainActor
+    private func runRemindersSyncNow() async {
+        guard let svc = remindersSyncService else { return }
+        isSyncingReminders = true
+        defer { isSyncingReminders = false }
+        do {
+            let report = try await svc.syncNow()
+            lastReminderSyncSummary = "Last sync: \(report.summary)"
+            if !report.errors.isEmpty {
+                lastReminderSyncSummary! += " (\(report.errors.count) error(s); see Console)"
+                for err in report.errors { print("[reminders] \(err)") }
+            }
+        } catch {
+            lastReminderSyncSummary = "Last sync failed: \(error.localizedDescription)"
         }
     }
 

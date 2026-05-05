@@ -599,4 +599,44 @@ Keep this document up to date as decisions evolve. Future-you (and Claude Code) 
 
 ---
 
+## 4.7 — Apple Reminders.app bidirectional sync (2026-05-04)
+
+**Decision:** Pull v2+ Reminders sync forward. Smoory's checklist-kind UserLists round-trip with `EKCalendar`/`EKReminder` via EventKit. New `RemindersSyncService` performs full reconcile on Smoory-side mutations, on `EKEventStoreChanged` notifications (debounced 300ms), and on user-triggered "Sync now". Sync is gated behind an explicit opt-in Settings toggle that defaults to OFF — no real Reminders.app data is touched until the user flips it on.
+
+**Why pull forward:** Originally deferred per ARCHITECTURE.md §"Apple framework integration". User reported expecting Smoory lists in Reminders.app for cross-device viewing, Siri, lock screen, and CarPlay. The deferral served Phase 1–4 schema bring-up; with the lists feature shipping in 4.6 the gap became real.
+
+**Scope of sync:**
+- **Direction:** bidirectional. Smoory-side edits push to EK; Reminders.app edits pull into Smoory.
+- **First-run import:** every existing `EKCalendar` of source `.reminder` is imported as a Smoory `UserList` (`kind = .checklist`). Items round-trip from there.
+- **Notes-kind UserLists are excluded** — Reminders has no notes-only concept and items in Reminders.app are universally checkable. Notes-kind lists carry a "Local only" badge in the UI and never get an `eventKitIdentifier`. Conversion notes→checklist (no UI for kind change in 4.7) is the path to bring a notes list into sync.
+- **Triggers:** push via `.EKEventStoreChanged` (debounced 300ms); fire-and-forget reconcile after every Smoory list/item write; manual "Sync now" toolbar button as fallback.
+
+**Identity:** `UserList.eventKitIdentifier: String?` stores `EKCalendar.calendarIdentifier`; `UserListItem.eventKitIdentifier: String?` stores `EKReminder.calendarItemIdentifier`. Both nullable — notes-kind, pre-permission, or pre-first-sync rows have nil.
+
+**Conflict resolution:** Last-writer-wins (LWW) by timestamp. Smoory uses `updatedAt`; EK uses `lastModifiedDate`. Newer side wins for title, completion state, completion date. Deletions win over edits (if an item is deleted on one side and edited on the other within the same sync window, deletion stands). No conflict UI in 4.7 — silent LWW. Re-evaluate if data loss complaints surface.
+
+**Source for new EK calendars:** `EKEventStore.defaultCalendarForNewReminders()?.source`. If nil (e.g., iCloud signed out), Smoory enters pull-only mode for that session and logs.
+
+**List title collisions on first import:** if an EK calendar's title matches an existing Smoory UserList title, the imported list is named `"<title> (imported)"` rather than silently merging two unrelated lists. User can rename to merge intent later.
+
+**Permission gate:** `NSRemindersFullAccessUsageDescription` Info.plist key. `EKEventStore.requestFullAccessToReminders()` called when the user enables the Settings toggle. Authorization status read from `EKEventStore.authorizationStatus(for: .reminder)` — Smoory persists no permission state of its own. Denied or revoked → reconcile no-ops, lists keep working locally.
+
+**Concurrency:** an actor-based `SyncSerializer` ensures only one reconcile runs at a time. New triggers during a running reconcile coalesce into one follow-up.
+
+**Schema change:** two nullable `String?` fields added to existing entities. Per CLAUDE.md SwiftData rules and the user's stated indifference to migration on fictitious data, no migration plan is shipped.
+
+**Out of scope for 4.7:**
+- Per-list "sync this list / not this list" toggle. All eligible lists sync once the global toggle is on.
+- Reminders-side priority, notes, URL fields. Smoory's `UserListItem` doesn't model them; ignored on read, never pushed.
+- `EKReminder.dueDateComponents` round-trip. `UserListItem` has no due date in 4.7.
+- Conflict-resolution UI. LWW silently for now.
+- Background sync when the app is fully terminated (EK changes are captured on next launch via reconcile, not by a background scheduler).
+- Multiple Reminders source selection UI. Default source only.
+- Notes-kind type conversion via tool/UI.
+- iOS / iPadOS targets — macOS only.
+
+**Risk surface:** first reconcile against real Reminders.app data is the highest-risk moment. The opt-in gate is the mitigation — sync stays off until the user makes a deliberate choice. LWW + deletion-wins are documented so expectations match behavior.
+
+---
+
 End of spec. Time to build.

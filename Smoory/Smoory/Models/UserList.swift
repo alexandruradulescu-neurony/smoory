@@ -14,6 +14,11 @@ final class UserList {
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
+    /// `EKCalendar.calendarIdentifier` once paired with a Reminders.app list. nil for
+    /// notes-kind lists, lists created before Reminders sync was enabled, and lists
+    /// created while permission was denied. Set/cleared by `RemindersSyncService` only.
+    var eventKitIdentifier: String?
+
     @Relationship(deleteRule: .cascade, inverse: \UserListItem.list)
     var items: [UserListItem] = []
 

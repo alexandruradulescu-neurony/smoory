@@ -221,7 +221,8 @@ When you sense the user has covered the basics, or the user signals they're done
         calendarService: CalendarService? = nil,
         scheduledActionService: ScheduledActionService? = nil,
         batchedFactExtractor: BatchedFactExtractor? = nil,
-        factRestructurer: FactRestructurer? = nil
+        factRestructurer: FactRestructurer? = nil,
+        remindersSyncService: RemindersSyncService? = nil
     ) {
         self.modelContainer = modelContainer
         self.hema = hema
@@ -236,7 +237,8 @@ When you sense the user has covered the basics, or the user signals they're done
             hema: hema,
             scheduledActionService: scheduledActionService,
             batchedFactExtractor: batchedFactExtractor,
-            factRestructurer: factRestructurer
+            factRestructurer: factRestructurer,
+            remindersSyncService: remindersSyncService
         )
         self.services = services
         self.orchestrator = Orchestrator(

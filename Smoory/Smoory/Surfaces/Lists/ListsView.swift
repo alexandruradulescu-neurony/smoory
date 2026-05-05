@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ListsView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.remindersSyncService) private var remindersSyncService
 
     @Query(sort: \UserList.updatedAt, order: .reverse)
     private var allLists: [UserList]
@@ -10,6 +11,7 @@ struct ListsView: View {
     @State private var selectedListID: UUID?
     @State private var showingNewListSheet = false
     @State private var showingArchived = false
+    @State private var isSyncingReminders = false
 
     private var visibleLists: [UserList] {
         showingArchived ? allLists : allLists.filter { !$0.isArchived }
@@ -37,6 +39,21 @@ struct ListsView: View {
                         Label("New list", systemImage: "plus")
                     }
                     .keyboardShortcut("n", modifiers: [.command])
+                }
+                if isRemindersSyncActive {
+                    ToolbarItem(placement: .secondaryAction) {
+                        Button {
+                            Task { await runSyncNow() }
+                        } label: {
+                            if isSyncingReminders {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                        }
+                        .disabled(isSyncingReminders)
+                        .help("Sync with Reminders.app")
+                    }
                 }
                 ToolbarItem(placement: .secondaryAction) {
                     Toggle(isOn: $showingArchived) {
@@ -95,8 +112,12 @@ struct ListsView: View {
     @ViewBuilder
     private var itemColumn: some View {
         if let list = selectedList {
-            UserListDetail(list: list, modelContainer: modelContext.container)
-                .id(list.id)
+            UserListDetail(
+                list: list,
+                modelContainer: modelContext.container,
+                remindersSyncService: remindersSyncService
+            )
+            .id(list.id)
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "sidebar.left")
@@ -106,6 +127,27 @@ struct ListsView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var isRemindersSyncActive: Bool {
+        guard let svc = remindersSyncService else { return false }
+        return svc.isOptedIn && svc.isAuthorized
+    }
+
+    @MainActor
+    private func runSyncNow() async {
+        guard let svc = remindersSyncService else { return }
+        isSyncingReminders = true
+        defer { isSyncingReminders = false }
+        do {
+            let report = try await svc.syncNow()
+            print("[reminders] sync now: \(report.summary)")
+            if !report.errors.isEmpty {
+                for err in report.errors { print("[reminders] error: \(err)") }
+            }
+        } catch {
+            print("[reminders] sync now failed: \(error)")
         }
     }
 
@@ -123,6 +165,7 @@ struct ListsView: View {
 struct UserListDetail: View {
     @Bindable var list: UserList
     let modelContainer: ModelContainer
+    let remindersSyncService: RemindersSyncService?
 
     @State private var newItemText: String = ""
     @State private var pendingItemRemoval: UserListItem?
@@ -271,6 +314,7 @@ struct UserListDetail: View {
         resolved.updatedAt = now
         try? context.save()
         newItemText = ""
+        remindersSyncService?.triggerReconcile()
     }
 
     private func toggleItem(_ item: UserListItem) {
@@ -285,9 +329,17 @@ struct UserListDetail: View {
         resolved.updatedAt = now
         resolved.list?.updatedAt = now
         try? context.save()
+        remindersSyncService?.triggerReconcile()
     }
 
     private func removeItem(_ item: UserListItem) {
+        // Capture EK identifier before deleting locally so the sync service can remove
+        // the paired reminder; otherwise reconcile would re-import the orphan.
+        let ekIdentifier = item.eventKitIdentifier
+        let svc = remindersSyncService
+        Task { @MainActor in
+            await svc?.deleteEKReminder(eventKitIdentifier: ekIdentifier)
+        }
         let context = ModelContext(modelContainer)
         let itemID = item.id
         let descriptor = FetchDescriptor<UserListItem>(predicate: #Predicate { $0.id == itemID })
@@ -299,6 +351,7 @@ struct UserListDetail: View {
         context.delete(resolved)
         try? context.save()
         pendingItemRemoval = nil
+        remindersSyncService?.triggerReconcile()
     }
 
     private func moveItems(from source: IndexSet, to destination: Int) {
@@ -333,6 +386,7 @@ struct UserListDetail: View {
         resolved.archivedAt = now
         resolved.updatedAt = now
         try? context.save()
+        remindersSyncService?.triggerReconcile()
     }
 
     private func restoreList() {
@@ -345,6 +399,7 @@ struct UserListDetail: View {
         resolved.archivedAt = nil
         resolved.updatedAt = now
         try? context.save()
+        remindersSyncService?.triggerReconcile()
     }
 }
 

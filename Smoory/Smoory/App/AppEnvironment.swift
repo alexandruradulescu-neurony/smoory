@@ -25,6 +25,10 @@ private struct NavigationStateKey: EnvironmentKey {
     static let defaultValue: NavigationState? = nil
 }
 
+private struct RemindersSyncKey: EnvironmentKey {
+    static let defaultValue: RemindersSyncService? = nil
+}
+
 extension EnvironmentValues {
     var hemaState: HemaState {
         get { self[HemaStateKey.self] }
@@ -49,5 +53,12 @@ extension EnvironmentValues {
     var navigationState: NavigationState? {
         get { self[NavigationStateKey.self] }
         set { self[NavigationStateKey.self] = newValue }
+    }
+    /// App-level Reminders.app sync service (4.7). ListsView and SettingsView read this
+    /// to drive the opt-in toggle and the manual "Sync now" button. nil when the app
+    /// hasn't yet stood the service up (pre-hema or in tests).
+    var remindersSyncService: RemindersSyncService? {
+        get { self[RemindersSyncKey.self] }
+        set { self[RemindersSyncKey.self] = newValue }
     }
 }

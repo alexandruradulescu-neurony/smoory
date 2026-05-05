@@ -75,6 +75,7 @@ enum CreateListTool: Tool {
                 kind: kind,
                 modelContainer: context.services.modelContainer
             )
+            await context.services.remindersSyncService?.triggerReconcile()
             let payload = OutputPayload(
                 id: list.id.uuidString,
                 title: list.title,

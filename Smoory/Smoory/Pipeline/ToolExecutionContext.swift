@@ -30,6 +30,11 @@ struct ToolServices: Sendable {
     /// the batched extractor so the restructurer's input includes any facts
     /// freshly extracted during the same day-review pass.
     let factRestructurer: FactRestructurer?
+    /// Optional Reminders.app sync service (4.7). List tools fire
+    /// `triggerReconcile()` after every save; `RemoveFromListTool` calls
+    /// `deleteEKReminder` BEFORE deleting locally so the EK row is removed
+    /// at the same moment as the SwiftData row.
+    let remindersSyncService: RemindersSyncService?
 
     init(
         calendarService: CalendarService,
@@ -37,7 +42,8 @@ struct ToolServices: Sendable {
         hema: HemaService,
         scheduledActionService: ScheduledActionService? = nil,
         batchedFactExtractor: BatchedFactExtractor? = nil,
-        factRestructurer: FactRestructurer? = nil
+        factRestructurer: FactRestructurer? = nil,
+        remindersSyncService: RemindersSyncService? = nil
     ) {
         self.calendarService = calendarService
         self.modelContainer = modelContainer
@@ -45,5 +51,6 @@ struct ToolServices: Sendable {
         self.scheduledActionService = scheduledActionService
         self.batchedFactExtractor = batchedFactExtractor
         self.factRestructurer = factRestructurer
+        self.remindersSyncService = remindersSyncService
     }
 }

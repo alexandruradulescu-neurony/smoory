@@ -13,6 +13,10 @@ final class UserListItem {
     var order: Int = 0          // stable display order; new items appended via UserList.nextItemOrder
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+    /// `EKReminder.calendarItemIdentifier` once paired with a Reminders.app reminder.
+    /// nil for items in notes-kind lists, items created pre-permission, or items not
+    /// yet synced. Set/cleared by `RemindersSyncService` only.
+    var eventKitIdentifier: String?
     var list: UserList?         // inverse — set by SwiftData via UserList.items
 
     init() {}

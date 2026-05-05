@@ -12,13 +12,26 @@ struct UserListRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(list.title.isEmpty ? "Untitled list" : list.title)
                     .lineLimit(1)
-                if list.isArchived {
-                    Text("Archived")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    if list.isArchived {
+                        Text("Archived")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    if list.kind == .notes {
+                        Text("Local only")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             Spacer()
+            if list.eventKitIdentifier != nil {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("Synced with Reminders.app")
+            }
             Text(countLabel)
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)

@@ -46,6 +46,11 @@ struct SmooryApp: App {
     /// extracted facts. Single instance; the restructurer's own isRunning
     /// flag enforces single-flight.
     @State private var factRestructurer: FactRestructurer?
+    /// App-level Reminders.app sync service (4.7). Constructed at app launch
+    /// independent of hema since it has no hema dependency. Gated by the
+    /// `lists.remindersSyncEnabled` UserDefaults toggle exposed in Settings —
+    /// off by default so first-run users don't auto-sync real Reminders data.
+    @State private var remindersSyncService: RemindersSyncService?
     /// Timestamp of the last scenePhase → background transition. Used to gate
     /// the 5-min background-fire trigger so Cmd-Tab task switches don't fire
     /// extraction every time.
@@ -101,6 +106,7 @@ struct SmooryApp: App {
                     .environment(\.chatViewModel, chatViewModel)
                     .environment(\.scheduledActionService, scheduledActionService)
                     .environment(\.navigationState, navigationState)
+                    .environment(\.remindersSyncService, remindersSyncService)
                     .sheet(isPresented: Binding(
                         get: { pendingDayReview.actionToPresent != nil || pendingWeekReview.actionToPresent != nil },
                         set: { newValue in
@@ -114,6 +120,7 @@ struct SmooryApp: App {
                     }
                     .task {
                         initializeScheduledActionsIfNeeded()
+                        initializeRemindersSyncIfNeeded()
                         await initializeHemaIfNeeded()
                         await requestNotificationPermissionIfNeeded()
                         startPollingIfNeeded()
@@ -201,7 +208,8 @@ struct SmooryApp: App {
                 chatSessionID: chatSessionID,
                 scheduledActionService: scheduledActionService,
                 batchedFactExtractor: extractor,
-                factRestructurer: restructurer
+                factRestructurer: restructurer,
+                remindersSyncService: remindersSyncService
             )
             // Compact memory generator (4.2) — single instance shared by the
             // morning brief route (.today side-write) and the week review hook
@@ -243,6 +251,24 @@ struct SmooryApp: App {
         } catch {
             hemaState = .failed(error.localizedDescription)
             print("[smoory] hema init failed: \(error)")
+        }
+    }
+
+    /// Constructs the Reminders.app sync service once and starts observing if the user
+    /// previously opted in AND EventKit access is already granted. First-time opt-in is
+    /// driven from the Settings toggle, which calls `requestPermission()` itself.
+    @MainActor
+    private func initializeRemindersSyncIfNeeded() {
+        guard remindersSyncService == nil else { return }
+        let svc = RemindersSyncService(modelContainer: sharedModelContainer)
+        remindersSyncService = svc
+        // Auto-start observer + initial reconcile only when both conditions hold —
+        // toggle preserved across launches, permission preserved by EventKit.
+        if svc.isOptedIn, svc.isAuthorized {
+            svc.startObserving()
+            Task { @MainActor in
+                _ = try? await svc.syncNow()
+            }
         }
     }
 

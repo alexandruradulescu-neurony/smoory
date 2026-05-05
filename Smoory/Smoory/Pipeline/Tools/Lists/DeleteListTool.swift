@@ -64,6 +64,10 @@ enum DeleteListTool: Tool {
             list.archivedAt = now
             list.updatedAt = now
             try modelContext.save()
+            // Reconcile is a no-op for archived lists (filtered out of eligible set);
+            // call anyway so any concurrent EK changes that should still flow into other
+            // lists get picked up.
+            await context.services.remindersSyncService?.triggerReconcile()
 
             let payload = OutputPayload(
                 id: list.id.uuidString,

@@ -50,9 +50,16 @@ enum RemoveFromListTool: Tool {
             let item = try ListToolUtils.resolveItem(itemID: input.item_id, in: modelContext)
             let parentID = item.list?.id.uuidString ?? ""
             let id = item.id
+            // Capture the EK identifier BEFORE deleting locally so the sync service
+            // can remove the paired EKReminder. Without this hop, reconcile would
+            // re-import the orphan as a new item.
+            let ekIdentifier = item.eventKitIdentifier
+            await context.services.remindersSyncService?.deleteEKReminder(eventKitIdentifier: ekIdentifier)
+
             item.list?.updatedAt = Date()
             modelContext.delete(item)
             try modelContext.save()
+            await context.services.remindersSyncService?.triggerReconcile()
 
             let payload = OutputPayload(id: id.uuidString, removed: true)
             let json = try ListToolUtils.encodeJSON(payload)
