@@ -52,12 +52,13 @@ enum UpdateTodoTool: Tool {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.todoNotFound.errorDescription ?? "")
         }
         do {
-            let todo = try Self.performAction(
+            let item = try Self.performAction(
                 todoID: uuid,
                 input: input,
                 modelContainer: context.services.modelContainer
             )
-            let json = #"{"status":"updated","id":"\#(todo.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(todo.title))"}"#
+            await context.services.remindersSyncService?.triggerReconcile()
+            let json = #"{"status":"updated","id":"\#(item.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(item.text))"}"#
             return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
         } catch {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
@@ -71,37 +72,40 @@ enum UpdateTodoTool: Tool {
         todoID: UUID,
         input: Input,
         modelContainer: ModelContainer
-    ) throws -> Todo {
+    ) throws -> UserListItem {
         let context = ModelContext(modelContainer)
-        guard let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) else {
+        guard let item = TodoToolUtils.fetchItem(id: todoID.uuidString, in: context) else {
             throw TodoToolError.todoNotFound
         }
 
-        if let title = input.title { todo.title = title }
-        if let notes = input.notes { todo.notes = notes }
+        if let title = input.title { item.text = title }
+        if let notes = input.notes { item.notes = notes.isEmpty ? nil : notes }
         if let dueStr = input.due_date {
             if dueStr.isEmpty {
-                todo.dueDate = nil
+                item.dueDate = nil
+                item.hasTime = false
             } else if let date = CreateTodoTool.parseDueDate(dueStr) {
-                todo.dueDate = date
+                item.dueDate = date
             }
         }
         if let prio = TodoToolUtils.priority(from: input.priority) {
-            todo.priority = prio
+            item.priority = prio
         }
         if let slug = input.role_slug {
             if slug.isEmpty {
-                todo.role = nil
+                item.role = nil
             } else {
                 let descriptor = FetchDescriptor<Role>()
                 let allRoles = (try? context.fetch(descriptor)) ?? []
-                todo.role = allRoles.first(where: { $0.slug == slug }) ?? todo.role
+                item.role = allRoles.first(where: { $0.slug == slug }) ?? item.role
             }
         }
-        todo.updatedAt = Date()
+        let now = Date()
+        item.updatedAt = now
+        item.list?.updatedAt = now
         try context.save()
         Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
-        return todo
+        return item
     }
 
     /// Surface path: caller hands typed values for everything; we set them all and save.
@@ -110,32 +114,35 @@ enum UpdateTodoTool: Tool {
     /// `context` argument is kept for backwards compatibility.
     @discardableResult
     static func saveChanges(
-        to todo: Todo,
+        to item: UserListItem,
         title: String,
         notes: String,
         dueDate: Date?,
-        priority: TodoPriority,
+        priority: Int,
         role: Role?,
         in context: ModelContext,
         modelContainer: ModelContainer
-    ) throws -> Todo {
+    ) throws -> UserListItem {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { throw TodoToolError.missingTitle }
-        todo.title = trimmed
-        todo.notes = notes
-        todo.dueDate = dueDate
-        todo.priority = priority
-        todo.role = role
-        todo.updatedAt = Date()
+        item.text = trimmed
+        item.notes = notes.isEmpty ? nil : notes
+        item.dueDate = dueDate
+        if dueDate == nil { item.hasTime = false }
+        item.priority = max(0, min(9, priority))
+        item.role = role
+        let now = Date()
+        item.updatedAt = now
+        item.list?.updatedAt = now
         try context.save()
         Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
-        return todo
+        return item
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {
         guard let input = try? TodoToolUtils.decode(Input.self, from: parametersJSON) else { return nil }
         let context = ModelContext(modelContainer)
-        let title = TodoToolUtils.fetchTodo(id: input.todo_id, in: context)?.title ?? "(unknown todo)"
+        let title = TodoToolUtils.fetchItem(id: input.todo_id, in: context)?.text ?? "(unknown todo)"
 
         var changes: [String] = []
         if let t = input.title, !t.isEmpty { changes.append("title") }
@@ -292,13 +299,13 @@ private struct UpdateTodoEditView: View {
 
     private func loadInitial() {
         let context = ModelContext(modelContainer)
-        let todo = TodoToolUtils.fetchTodo(id: initialInput.todo_id, in: context)
+        let item = TodoToolUtils.fetchItem(id: initialInput.todo_id, in: context)
 
-        let storedTitle = todo?.title ?? ""
-        let storedNotes = todo?.notes ?? ""
-        let storedDue = todo?.dueDate
-        let storedPriority = todo.map { TodoToolUtils.priorityName($0.priority) } ?? "normal"
-        let storedRoleSlug = todo?.role?.slug
+        let storedTitle = item?.text ?? ""
+        let storedNotes = item?.notes ?? ""
+        let storedDue = item?.dueDate
+        let storedPriority = item.map { TodoToolUtils.priorityName($0.priority) } ?? "normal"
+        let storedRoleSlug = item?.role?.slug
 
         currentTitle = storedTitle
         currentNotes = storedNotes

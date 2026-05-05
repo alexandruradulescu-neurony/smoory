@@ -65,12 +65,22 @@ enum GetOpenTodosTool: Tool {
         let input = try Self.decodeInput(parametersJSON)
         let modelContext = ModelContext(context.services.modelContainer)
 
-        var descriptor = FetchDescriptor<Todo>()
-        descriptor.fetchLimit = 500
-        let allTodos = (try? modelContext.fetch(descriptor)) ?? []
+        var descriptor = FetchDescriptor<UserListItem>()
+        descriptor.fetchLimit = 1000
+        let allItems = (try? modelContext.fetch(descriptor)) ?? []
 
         // Top-level only: subtasks ride along nested under their parent payloads, never flat.
-        var filtered = allTodos.filter { !$0.isCompleted && !$0.isArchived && $0.parentTodo == nil }
+        // 4.8c — narrow to "todo-shaped" items: anything with a due date or priority set, OR
+        // anchored to a role/project/thread. Excludes plain shopping/reading list rows that
+        // weren't created with todo intent.
+        var filtered = allItems.filter { item in
+            guard !item.isCompleted, !item.isArchived, item.parentItem == nil else { return false }
+            return item.dueDate != nil
+                || item.priority > 0
+                || item.role != nil
+                || item.parentProject != nil
+                || item.parentThread != nil
+        }
 
         if let roleSlug = input.role {
             filtered = filtered.filter { $0.role?.slug == roleSlug }
@@ -78,21 +88,21 @@ enum GetOpenTodosTool: Tool {
 
         if let dueBeforeStr = input.dueBefore,
            let dueBefore = CreateTodoTool.parseDueDate(dueBeforeStr) {
-            filtered = filtered.filter { todo in
-                guard let due = todo.dueDate else { return false }
+            filtered = filtered.filter { item in
+                guard let due = item.dueDate else { return false }
                 return due < dueBefore
             }
         }
 
         if let priorityMinStr = input.priorityMin,
-           let minPriority = Self.priority(from: priorityMinStr) {
-            filtered = filtered.filter { $0.priority.rawValue >= minPriority.rawValue }
+           let minPriority = TodoToolUtils.priority(from: priorityMinStr) {
+            filtered = filtered.filter { $0.priority >= minPriority }
         }
 
         let limit = input.limit ?? 20
         let limited = Array(filtered.prefix(limit))
 
-        let payload = limited.map { Self.makePayload(todo: $0, includeSubtasks: true) }
+        let payload = limited.map { Self.makePayload(item: $0, includeSubtasks: true) }
 
         let json = try Self.encodeJSON(payload)
         return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
@@ -100,20 +110,20 @@ enum GetOpenTodosTool: Tool {
 
     /// Recursive payload builder. `includeSubtasks` is true for top-level rows so children ride along.
     /// For subtasks themselves we never recurse further (one-level rule, enforced at insertion time).
-    private static func makePayload(todo: Todo, includeSubtasks: Bool) -> TodoPayload {
+    private static func makePayload(item: UserListItem, includeSubtasks: Bool) -> TodoPayload {
         let kids = includeSubtasks
-            ? todo.subtasks
+            ? item.subtasks
                 .filter { !$0.isArchived }
-                .map { Self.makePayload(todo: $0, includeSubtasks: false) }
+                .map { Self.makePayload(item: $0, includeSubtasks: false) }
             : []
         return TodoPayload(
-            id: todo.id.uuidString,
-            title: todo.title,
-            notes: todo.notes,
-            dueDate: todo.dueDate?.formatted(.iso8601),
-            priority: Self.priorityName(todo.priority),
-            role: todo.role?.slug,
-            project: todo.parentProject?.title,
+            id: item.id.uuidString,
+            title: item.text,
+            notes: item.notes ?? "",
+            dueDate: item.dueDate?.formatted(.iso8601),
+            priority: TodoToolUtils.priorityName(item.priority),
+            role: item.role?.slug,
+            project: item.parentProject?.title,
             subtasks: kids
         )
     }
@@ -134,22 +144,4 @@ enum GetOpenTodosTool: Tool {
         return String(data: data, encoding: .utf8) ?? "[]"
     }
 
-    private static func priority(from string: String) -> TodoPriority? {
-        switch string.lowercased() {
-        case "low": return .low
-        case "normal": return .normal
-        case "high": return .high
-        case "urgent": return .urgent
-        default: return nil
-        }
-    }
-
-    private static func priorityName(_ p: TodoPriority) -> String {
-        switch p {
-        case .low: return "low"
-        case .normal: return "normal"
-        case .high: return "high"
-        case .urgent: return "urgent"
-        }
-    }
 }

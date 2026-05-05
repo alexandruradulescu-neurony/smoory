@@ -33,8 +33,9 @@ enum CompleteTodoTool: Tool {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.todoNotFound.errorDescription ?? "")
         }
         do {
-            let todo = try Self.performAction(todoID: uuid, modelContainer: context.services.modelContainer)
-            let json = #"{"status":"completed","id":"\#(todo.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(todo.title))"}"#
+            let item = try Self.performAction(todoID: uuid, modelContainer: context.services.modelContainer)
+            await context.services.remindersSyncService?.triggerReconcile()
+            let json = #"{"status":"completed","id":"\#(item.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(item.text))"}"#
             return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
         } catch {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
@@ -42,23 +43,25 @@ enum CompleteTodoTool: Tool {
     }
 
     @discardableResult
-    static func performAction(todoID: UUID, modelContainer: ModelContainer) throws -> Todo {
+    static func performAction(todoID: UUID, modelContainer: ModelContainer) throws -> UserListItem {
         let context = ModelContext(modelContainer)
-        guard let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) else {
+        guard let item = TodoToolUtils.fetchItem(id: todoID.uuidString, in: context) else {
             throw TodoToolError.todoNotFound
         }
-        todo.isCompleted = true
-        todo.completedAt = Date()
-        todo.updatedAt = Date()
+        let now = Date()
+        item.isCompleted = true
+        item.completedAt = now
+        item.updatedAt = now
+        item.list?.updatedAt = now
         try context.save()
         Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
-        return todo
+        return item
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {
         guard let input = try? TodoToolUtils.decode(Input.self, from: parametersJSON) else { return nil }
         let context = ModelContext(modelContainer)
-        let title = TodoToolUtils.fetchTodo(id: input.todo_id, in: context)?.title ?? "(unknown todo)"
+        let title = TodoToolUtils.fetchItem(id: input.todo_id, in: context)?.text ?? "(unknown todo)"
         return ProposedActionSummary(
             icon: "checkmark.circle",
             title: "Mark complete",

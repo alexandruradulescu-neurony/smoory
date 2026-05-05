@@ -14,8 +14,8 @@ final class Project {
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
-    @Relationship(inverse: \Todo.parentProject)
-    var todos: [Todo] = []
+    @Relationship(inverse: \UserListItem.parentProject)
+    var listItems: [UserListItem] = []
 
     @Relationship(inverse: \Thread.relatedProject)
     var threads: [Thread] = []

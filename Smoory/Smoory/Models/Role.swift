@@ -23,8 +23,8 @@ final class Role {
     @Relationship(inverse: \Thread.role)
     var threads: [Thread] = []
 
-    @Relationship(inverse: \Todo.role)
-    var todos: [Todo] = []
+    @Relationship(inverse: \UserListItem.role)
+    var listItems: [UserListItem] = []
 
     init() {}
 }

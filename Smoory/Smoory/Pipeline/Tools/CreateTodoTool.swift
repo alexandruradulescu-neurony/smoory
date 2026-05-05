@@ -62,11 +62,11 @@ enum CreateTodoTool: Tool {
             role = allRoles.first(where: { $0.slug == slug })
         }
 
-        let priority = TodoToolUtils.priority(from: input.priority) ?? .normal
+        let priority = TodoToolUtils.priority(from: input.priority) ?? 5
         let dueDate = input.due_date.flatMap(Self.parseDueDate)
 
         do {
-            let todo = try Self.performAction(
+            let item = try Self.performAction(
                 title: input.title,
                 notes: input.notes ?? "",
                 dueDate: dueDate,
@@ -75,10 +75,13 @@ enum CreateTodoTool: Tool {
                 source: .aiProposal,
                 modelContainer: context.services.modelContainer
             )
+            // 4.7+ — also drive Reminders.app sync since these items now live in a
+            // checklist-kind UserList and round-trip with EK.
+            await context.services.remindersSyncService?.triggerReconcile()
             let payload: [String: String] = [
                 "status": "created",
-                "id": todo.id.uuidString,
-                "title": todo.title,
+                "id": item.id.uuidString,
+                "title": item.text,
             ]
             let json = try Self.encodeJSON(payload)
             return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
@@ -88,31 +91,40 @@ enum CreateTodoTool: Tool {
     }
 
     /// Direct creation path used by both the chat-tool wrapper and the surface quick-add.
-    /// Caller resolves Role; this function accepts a typed reference.
+    /// Backing entity is `UserListItem` (4.8c) inserted into the auto-managed "Todos"
+    /// list. The pre-4.8c `Todo` entity is no longer written.
     static func performAction(
         title: String,
         notes: String = "",
         dueDate: Date? = nil,
-        priority: TodoPriority = .normal,
+        priority: Int = 5,
         role: Role? = nil,
-        source: TodoSource = .aiProposal,
+        source: UserListItemSource = .aiProposal,
         modelContainer: ModelContainer
-    ) throws -> Todo {
+    ) throws -> UserListItem {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { throw TodoToolError.missingTitle }
 
         let context = ModelContext(modelContainer)
-        let todo = Todo()
-        todo.title = trimmed
-        todo.notes = notes
-        todo.dueDate = dueDate
-        todo.priority = priority
-        todo.role = role
-        todo.source = source
-        context.insert(todo)
+        let list = TodoToolUtils.defaultTodosList(in: context)
+        let item = UserListItem()
+        item.text = trimmed
+        item.notes = notes.isEmpty ? nil : notes
+        item.dueDate = dueDate
+        item.hasTime = false  // chat-created todos default to date-only when a due is provided
+        item.priority = max(0, min(9, priority))
+        item.role = role
+        item.source = source
+        item.order = list.nextItemOrder
+        let now = Date()
+        item.createdAt = now
+        item.updatedAt = now
+        item.list = list
+        list.updatedAt = now
+        context.insert(item)
         try context.save()
         Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
-        return todo
+        return item
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {

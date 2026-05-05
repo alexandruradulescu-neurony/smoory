@@ -21,8 +21,8 @@ final class Thread {
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
 
-    @Relationship(inverse: \Todo.parentThread)
-    var todos: [Todo] = []
+    @Relationship(inverse: \UserListItem.parentThread)
+    var listItems: [UserListItem] = []
 
     var people: [Person] = []          // unidirectional — Person does not declare an inverse
 

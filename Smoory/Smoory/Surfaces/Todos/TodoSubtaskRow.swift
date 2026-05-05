@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TodoSubtaskRow: View {
-    let subtask: Todo
+    let subtask: UserListItem
     let onComplete: () -> Void
 
     var body: some View {
@@ -18,7 +18,7 @@ struct TodoSubtaskRow: View {
 
             NavigationLink(value: subtask.id) {
                 HStack(spacing: 6) {
-                    Text(subtask.title)
+                    Text(subtask.text)
                         .font(.smoory_body)
                         .foregroundStyle(subtask.isCompleted ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
                         .strikethrough(subtask.isCompleted)

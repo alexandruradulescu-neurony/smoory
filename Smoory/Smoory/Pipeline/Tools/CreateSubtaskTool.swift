@@ -61,7 +61,7 @@ enum CreateSubtaskTool: Tool {
             roleOverride = allRoles.first(where: { $0.slug == slug })
         }
 
-        let priority = TodoToolUtils.priority(from: input.priority) ?? .normal
+        let priority = TodoToolUtils.priority(from: input.priority) ?? 5
         let dueDate = input.due_date.flatMap(CreateTodoTool.parseDueDate)
 
         do {
@@ -74,7 +74,8 @@ enum CreateSubtaskTool: Tool {
                 source: .aiProposal,
                 modelContainer: context.services.modelContainer
             )
-            let json = #"{"status":"created","id":"\#(subtask.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(subtask.title))","parent_id":"\#(input.parent_todo_id)"}"#
+            await context.services.remindersSyncService?.triggerReconcile()
+            let json = #"{"status":"created","id":"\#(subtask.id.uuidString)","title":"\#(TodoToolUtils.jsonEscape(subtask.text))","parent_id":"\#(input.parent_todo_id)"}"#
             return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
         } catch {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
@@ -82,35 +83,46 @@ enum CreateSubtaskTool: Tool {
     }
 
     /// Direct subtask creation. Pass `roleOverride: nil` to inherit the parent's role; pass a Role
-    /// reference to use that explicitly.
+    /// reference to use that explicitly. Backing entity is `UserListItem` (4.8c) — the
+    /// subtask is added to the same UserList as its parent, with `parentItem` set.
     @discardableResult
     static func performAction(
         parentTodoID: UUID,
         title: String,
         dueDate: Date? = nil,
-        priority: TodoPriority = .normal,
+        priority: Int = 5,
         roleOverride: Role? = nil,
-        source: TodoSource = .aiProposal,
+        source: UserListItemSource = .aiProposal,
         modelContainer: ModelContainer
-    ) throws -> Todo {
+    ) throws -> UserListItem {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { throw TodoToolError.missingTitle }
 
         let context = ModelContext(modelContainer)
-        guard let parent = TodoToolUtils.fetchTodo(id: parentTodoID.uuidString, in: context) else {
+        guard let parent = TodoToolUtils.fetchItem(id: parentTodoID.uuidString, in: context) else {
             throw TodoToolError.todoNotFound
         }
-        if parent.parentTodo != nil {
+        if parent.parentItem != nil {
             throw TodoToolError.invalidParent
         }
 
-        let subtask = Todo()
-        subtask.title = trimmed
-        subtask.parentTodo = parent
+        let subtask = UserListItem()
+        subtask.text = trimmed
+        subtask.parentItem = parent
         subtask.role = roleOverride ?? parent.role
-        subtask.priority = priority
+        subtask.priority = max(0, min(9, priority))
         subtask.dueDate = dueDate
+        subtask.hasTime = false
         subtask.source = source
+        // Subtasks live in the same list as their parent so iterating
+        // `list.items` covers both (per UI conventions in TodosView/ListsView).
+        subtask.list = parent.list
+        subtask.order = parent.list?.nextItemOrder ?? 0
+        let now = Date()
+        subtask.createdAt = now
+        subtask.updatedAt = now
+        parent.updatedAt = now
+        parent.list?.updatedAt = now
         context.insert(subtask)
         try context.save()
         Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
@@ -120,7 +132,7 @@ enum CreateSubtaskTool: Tool {
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {
         guard let input = try? TodoToolUtils.decode(Input.self, from: parametersJSON) else { return nil }
         let context = ModelContext(modelContainer)
-        let parentTitle = TodoToolUtils.fetchTodo(id: input.parent_todo_id, in: context)?.title ?? "(unknown parent)"
+        let parentTitle = TodoToolUtils.fetchItem(id: input.parent_todo_id, in: context)?.text ?? "(unknown parent)"
         var bits: [String] = ["under: \(parentTitle)"]
         if let dueStr = input.due_date, let due = CreateTodoTool.parseDueDate(dueStr) {
             bits.append(TodoToolUtils.relativeDateLabel(due))

@@ -72,7 +72,6 @@ struct SmooryApp: App {
             Goal.self,
             Project.self,
             Thread.self,
-            Todo.self,
             Habit.self,
             Person.self,
             Profile.self,

@@ -40,12 +40,14 @@ enum CandidateAcceptor {
             stored.resultEntityID = project.id
 
         case .todo:
-            let todo = try CreateTodoTool.performAction(
+            // 4.8c — backing entity is now UserListItem inserted into the auto-managed
+            // "Todos" list. CreateTodoTool.performAction returns the new item.
+            let item = try CreateTodoTool.performAction(
                 title: body,
                 source: .userQuickadd,
                 modelContainer: modelContainer
             )
-            stored.resultEntityID = todo.id
+            stored.resultEntityID = item.id
 
         case .person:
             let person = Person()

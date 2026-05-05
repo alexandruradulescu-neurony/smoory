@@ -4,13 +4,13 @@ import SwiftUI
 struct TodosView: View {
     @Environment(\.modelContext) private var modelContext
 
-    @Query(sort: \Todo.createdAt, order: .reverse) private var allTodos: [Todo]
+    @Query(sort: \UserListItem.createdAt, order: .reverse) private var allTodos: [UserListItem]
     @State private var viewModel = TodosViewModel()
     @State private var expandedTodoIDs: Set<UUID> = []
     @State private var navigationPath = NavigationPath()
 
     @State private var pendingUndo: PendingUndo? = nil
-    @State private var deferringTodo: Todo? = nil
+    @State private var deferringTodo: UserListItem? = nil
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -69,7 +69,7 @@ struct TodosView: View {
     }
 
     @ViewBuilder
-    private func rowAndSubtasks(for todo: Todo) -> some View {
+    private func rowAndSubtasks(for todo: UserListItem) -> some View {
         TodoRow(
             todo: todo,
             isExpanded: expandedTodoIDs.contains(todo.id),
@@ -183,7 +183,7 @@ struct TodosView: View {
 
     // MARK: - Mutations
 
-    private func complete(_ todo: Todo) {
+    private func complete(_ todo: UserListItem) {
         do {
             withAnimation(.easeInOut(duration: 0.25)) {
                 _ = try? CompleteTodoTool.performAction(todoID: todo.id, modelContainer: modelContext.container)
@@ -191,12 +191,12 @@ struct TodosView: View {
         }
     }
 
-    private func archive(_ todo: Todo) {
+    private func archive(_ todo: UserListItem) {
         do {
             let result = try DeleteTodoTool.performAction(todoID: todo.id, modelContainer: modelContext.container)
             showUndo(PendingUndo(
-                title: result.todo.title,
-                archivedTodoID: result.todo.id,
+                title: result.item.text,
+                archivedTodoID: result.item.id,
                 archivedSubtaskIDs: result.archivedSubtaskIDs,
                 expiresAt: Date().addingTimeInterval(5)
             ))
@@ -228,7 +228,7 @@ struct TodosView: View {
         withAnimation { pendingUndo = nil }
     }
 
-    private func sortedSubtasks(_ parent: Todo) -> [Todo] {
+    private func sortedSubtasks(_ parent: UserListItem) -> [UserListItem] {
         parent.subtasks
             .filter { !$0.isArchived }
             .sorted { lhs, rhs in

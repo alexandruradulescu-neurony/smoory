@@ -90,23 +90,35 @@ struct DebugCommands: Commands {
                     matchingPolicy: .nextTime
                 ) ?? Date().addingTimeInterval(86400 * 3)
 
-                let parent = Todo()
-                parent.title = "Plan birthday party"
-                parent.dueDate = saturday
+                // 4.8c — backing entity is UserListItem inserted into the auto-managed
+                // "Todos" UserList. Subtasks are linked via parentItem and share the list.
+                let list = TodoToolUtils.defaultTodosList(in: context)
 
-                let s1 = Todo()
-                s1.title = "Send invitations"
+                let parent = UserListItem()
+                parent.text = "Plan birthday party"
+                parent.dueDate = saturday
+                parent.list = list
+                parent.order = list.nextItemOrder
+
+                let s1 = UserListItem()
+                s1.text = "Send invitations"
                 s1.isCompleted = true
                 s1.completedAt = Date()
-                s1.parentTodo = parent
+                s1.parentItem = parent
+                s1.list = list
+                s1.order = list.nextItemOrder
 
-                let s2 = Todo()
-                s2.title = "Order cake"
-                s2.parentTodo = parent
+                let s2 = UserListItem()
+                s2.text = "Order cake"
+                s2.parentItem = parent
+                s2.list = list
+                s2.order = list.nextItemOrder
 
-                let s3 = Todo()
-                s3.title = "Pick up balloons"
-                s3.parentTodo = parent
+                let s3 = UserListItem()
+                s3.text = "Pick up balloons"
+                s3.parentItem = parent
+                s3.list = list
+                s3.order = list.nextItemOrder
 
                 context.insert(parent)
                 context.insert(s1)

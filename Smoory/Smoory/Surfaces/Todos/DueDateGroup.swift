@@ -29,8 +29,8 @@ enum DueDateGroup: String, CaseIterable, Identifiable {
         }
     }
 
-    static func group(for todo: Todo, now: Date = Date()) -> DueDateGroup {
-        guard let dueDate = todo.dueDate else { return .noDueDate }
+    static func group(for item: UserListItem, now: Date = Date()) -> DueDateGroup {
+        guard let dueDate = item.dueDate else { return .noDueDate }
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: now)
         guard

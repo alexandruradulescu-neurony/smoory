@@ -31,10 +31,12 @@ struct DueDatePill: View {
 }
 
 struct PriorityIndicator: View {
-    let priority: TodoPriority
+    /// EK-style 0–9 priority used by `UserListItem`. 0 = no badge; 1–4 low, 5 normal,
+    /// 6–8 high, 9 urgent. Mirrors the bucket mapping in `UserListItem.PriorityBucket`.
+    let priority: Int
 
     var body: some View {
-        if priority == .normal {
+        if priority == 0 || priority == 5 {
             EmptyView()
         } else {
             Image(systemName: glyph)
@@ -45,19 +47,19 @@ struct PriorityIndicator: View {
 
     private var glyph: String {
         switch priority {
-        case .urgent: "exclamationmark.2"
-        case .high: "exclamationmark"
-        case .low: "arrow.down"
-        case .normal: ""
+        case 9: return "exclamationmark.2"
+        case 6...8: return "exclamationmark"
+        case 1...4: return "arrow.down"
+        default: return ""
         }
     }
 
     private var tint: Color {
         switch priority {
-        case .urgent: .red
-        case .high: .orange
-        case .low: .secondary
-        case .normal: .clear
+        case 9: return .red
+        case 6...8: return .orange
+        case 1...4: return .secondary
+        default: return .clear
         }
     }
 }

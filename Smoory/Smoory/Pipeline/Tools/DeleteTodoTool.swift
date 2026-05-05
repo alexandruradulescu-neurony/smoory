@@ -35,7 +35,8 @@ enum DeleteTodoTool: Tool {
         }
         do {
             let result = try Self.performAction(todoID: uuid, modelContainer: context.services.modelContainer)
-            let json = #"{"status":"archived","id":"\#(result.todo.id.uuidString)","subtasks_archived":\#(result.archivedSubtaskIDs.count)}"#
+            await context.services.remindersSyncService?.triggerReconcile()
+            let json = #"{"status":"archived","id":"\#(result.item.id.uuidString)","subtasks_archived":\#(result.archivedSubtaskIDs.count)}"#
             return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
         } catch {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
@@ -43,23 +44,24 @@ enum DeleteTodoTool: Tool {
     }
 
     struct ArchiveResult {
-        let todo: Todo
+        let item: UserListItem
         let archivedSubtaskIDs: [UUID]
     }
 
     @discardableResult
     static func performAction(todoID: UUID, modelContainer: ModelContainer) throws -> ArchiveResult {
         let context = ModelContext(modelContainer)
-        guard let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) else {
+        guard let item = TodoToolUtils.fetchItem(id: todoID.uuidString, in: context) else {
             throw TodoToolError.todoNotFound
         }
         let now = Date()
-        todo.isArchived = true
-        todo.archivedAt = now
-        todo.updatedAt = now
+        item.isArchived = true
+        item.archivedAt = now
+        item.updatedAt = now
+        item.list?.updatedAt = now
 
         var archivedIDs: [UUID] = []
-        for sub in todo.subtasks where !sub.isArchived {
+        for sub in item.subtasks where !sub.isArchived {
             sub.isArchived = true
             sub.archivedAt = now
             sub.updatedAt = now
@@ -67,20 +69,20 @@ enum DeleteTodoTool: Tool {
         }
         try context.save()
         Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
-        return ArchiveResult(todo: todo, archivedSubtaskIDs: archivedIDs)
+        return ArchiveResult(item: item, archivedSubtaskIDs: archivedIDs)
     }
 
-    /// Restores a previously archived todo and a specified set of its subtasks.
+    /// Restores a previously archived item and a specified set of its subtasks.
     /// Used by the undo banner. Idempotent: missing ids are ignored.
     static func undoArchive(todoID: UUID, archivedSubtaskIDs: [UUID], modelContainer: ModelContainer) throws {
         let context = ModelContext(modelContainer)
-        if let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) {
-            todo.isArchived = false
-            todo.archivedAt = nil
-            todo.updatedAt = Date()
+        if let item = TodoToolUtils.fetchItem(id: todoID.uuidString, in: context) {
+            item.isArchived = false
+            item.archivedAt = nil
+            item.updatedAt = Date()
         }
         for subID in archivedSubtaskIDs {
-            if let sub = TodoToolUtils.fetchTodo(id: subID.uuidString, in: context) {
+            if let sub = TodoToolUtils.fetchItem(id: subID.uuidString, in: context) {
                 sub.isArchived = false
                 sub.archivedAt = nil
                 sub.updatedAt = Date()
@@ -93,10 +95,10 @@ enum DeleteTodoTool: Tool {
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {
         guard let input = try? TodoToolUtils.decode(Input.self, from: parametersJSON) else { return nil }
         let context = ModelContext(modelContainer)
-        guard let todo = TodoToolUtils.fetchTodo(id: input.todo_id, in: context) else {
+        guard let item = TodoToolUtils.fetchItem(id: input.todo_id, in: context) else {
             return ProposedActionSummary(icon: "trash", title: "Delete todo", primary: "(unknown todo)", secondary: nil)
         }
-        let liveSubs = todo.subtasks.filter { !$0.isArchived && !$0.isCompleted }.count
+        let liveSubs = item.subtasks.filter { !$0.isArchived && !$0.isCompleted }.count
         let secondary: String? = {
             switch liveSubs {
             case 0: return nil
@@ -107,7 +109,7 @@ enum DeleteTodoTool: Tool {
         return ProposedActionSummary(
             icon: "trash",
             title: "Delete todo",
-            primary: todo.title,
+            primary: item.text,
             secondary: secondary
         )
     }

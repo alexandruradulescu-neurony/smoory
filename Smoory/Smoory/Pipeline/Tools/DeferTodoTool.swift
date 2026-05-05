@@ -45,13 +45,14 @@ enum DeferTodoTool: Tool {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: TodoToolError.dateParseFailed.errorDescription ?? "")
         }
         do {
-            let todo = try Self.performAction(
+            let item = try Self.performAction(
                 todoID: uuid,
                 newDueDate: newDate,
                 reason: input.reason,
                 modelContainer: context.services.modelContainer
             )
-            let json = #"{"status":"deferred","id":"\#(todo.id.uuidString)","deferral_count":\#(todo.deferralCount)}"#
+            await context.services.remindersSyncService?.triggerReconcile()
+            let json = #"{"status":"deferred","id":"\#(item.id.uuidString)","deferral_count":\#(item.deferralCount)}"#
             return ToolOutput(toolUseId: context.toolUseId, content: json, isError: false)
         } catch {
             return TodoToolUtils.errorOutput(toolUseId: context.toolUseId, message: error.localizedDescription)
@@ -64,33 +65,36 @@ enum DeferTodoTool: Tool {
         newDueDate: Date,
         reason: String? = nil,
         modelContainer: ModelContainer
-    ) throws -> Todo {
+    ) throws -> UserListItem {
         let context = ModelContext(modelContainer)
-        guard let todo = TodoToolUtils.fetchTodo(id: todoID.uuidString, in: context) else {
+        guard let item = TodoToolUtils.fetchItem(id: todoID.uuidString, in: context) else {
             throw TodoToolError.todoNotFound
         }
-        if let oldDue = todo.dueDate {
-            todo.deferredFrom = oldDue
+        if let oldDue = item.dueDate {
+            item.deferredFrom = oldDue
         }
-        todo.dueDate = newDueDate
-        todo.deferralCount += 1
-        todo.updatedAt = Date()
+        item.dueDate = newDueDate
+        item.deferralCount += 1
+        let now = Date()
+        item.updatedAt = now
+        item.list?.updatedAt = now
 
         if let reason = reason?.trimmingCharacters(in: .whitespaces), !reason.isEmpty {
             let stamp = Date().formatted(.dateTime.year().month(.abbreviated).day())
             let line = "\n[Deferred \(stamp): \(reason)]"
-            todo.notes = todo.notes + line
+            let prior = item.notes ?? ""
+            item.notes = prior + line
         }
         try context.save()
         Task { @MainActor in TodosSnapshotWriter.writeFromStore(modelContainer) }
-        return todo
+        return item
     }
 
     static func renderSummary(parametersJSON: String, modelContainer: ModelContainer) -> ProposedActionSummary? {
         guard let input = try? TodoToolUtils.decode(Input.self, from: parametersJSON) else { return nil }
         let context = ModelContext(modelContainer)
-        let title = TodoToolUtils.fetchTodo(id: input.todo_id, in: context)?.title ?? "(unknown todo)"
-        let oldDate = TodoToolUtils.fetchTodo(id: input.todo_id, in: context)?.dueDate
+        let title = TodoToolUtils.fetchItem(id: input.todo_id, in: context)?.text ?? "(unknown todo)"
+        let oldDate = TodoToolUtils.fetchItem(id: input.todo_id, in: context)?.dueDate
         let newDate = CreateTodoTool.parseDueDate(input.new_due_date)
 
         var parts: [String] = []

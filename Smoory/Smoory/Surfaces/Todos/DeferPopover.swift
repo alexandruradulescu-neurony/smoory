@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Compact form for deferring a single todo. Anchored as a popover from row swipe / detail menu.
 struct DeferPopover: View {
-    let todo: Todo
+    let todo: UserListItem
     let modelContainer: ModelContainer
     let onCommit: () -> Void
     let onCancel: () -> Void
@@ -14,7 +14,7 @@ struct DeferPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Defer todo").font(.headline)
-            Text(todo.title).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+            Text(todo.text).font(.callout).foregroundStyle(.secondary).lineLimit(1)
 
             DatePicker("New due date", selection: $newDueDate, displayedComponents: [.date])
                 .datePickerStyle(.compact)

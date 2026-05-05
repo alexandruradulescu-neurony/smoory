@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TodoRow: View {
-    let todo: Todo
+    let todo: UserListItem
     let isExpanded: Bool
     let onComplete: () -> Void
     let onToggleExpand: () -> Void
@@ -19,7 +19,7 @@ struct TodoRow: View {
 
             NavigationLink(value: todo.id) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(todo.title)
+                    Text(todo.text)
                         .font(.smoory_body)
                         .strikethrough(todo.isCompleted || todo.isArchived)
                         .foregroundStyle(
@@ -32,7 +32,7 @@ struct TodoRow: View {
                         if let dueDate = todo.dueDate {
                             DueDatePill(dueDate: dueDate, group: DueDateGroup.group(for: todo))
                         }
-                        if todo.priority != .normal {
+                        if todo.priorityBucket != .none {
                             PriorityIndicator(priority: todo.priority)
                         }
                         if let role = todo.role {

@@ -11,28 +11,28 @@ struct TodoDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    @Query private var todos: [Todo]
+    @Query private var todos: [UserListItem]
     @Query(sort: \Role.name) private var allRoles: [Role]
 
     @State private var editTitle: String = ""
     @State private var editNotes: String = ""
     @State private var hasDueDate: Bool = false
     @State private var dueDate: Date = Date()
-    @State private var priority: TodoPriority = .normal
+    @State private var priority: Int = 5
     @State private var roleSlug: String? = nil
     @State private var didLoad: Bool = false
 
     @State private var newSubtaskTitle: String = ""
-    @State private var deferringSubtask: Todo? = nil
+    @State private var deferringSubtask: UserListItem? = nil
 
     init(todoID: UUID, onArchived: @escaping (PendingUndo) -> Void) {
         self.todoID = todoID
         self.onArchived = onArchived
-        let predicate = #Predicate<Todo> { $0.id == todoID }
+        let predicate = #Predicate<UserListItem> { $0.id == todoID }
         _todos = Query(filter: predicate)
     }
 
-    private var todo: Todo? { todos.first }
+    private var todo: UserListItem? { todos.first }
 
     var body: some View {
         Group {
@@ -42,7 +42,7 @@ struct TodoDetailView: View {
                 ContentUnavailableView("Todo not found", systemImage: "questionmark.folder")
             }
         }
-        .navigationTitle(todo?.title ?? "Todo")
+        .navigationTitle(todo?.text ?? "Todo")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Save") { save() }
@@ -60,11 +60,11 @@ struct TodoDetailView: View {
     }
 
     @ViewBuilder
-    private func content(for todo: Todo) -> some View {
+    private func content(for todo: UserListItem) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 fieldsSection
-                if todo.parentTodo == nil {
+                if todo.parentItem == nil {
                     Divider()
                     subtasksSection(parent: todo)
                 }
@@ -102,10 +102,10 @@ struct TodoDetailView: View {
 
             labeledField("Priority") {
                 Picker("", selection: $priority) {
-                    Text("Low").tag(TodoPriority.low)
-                    Text("Normal").tag(TodoPriority.normal)
-                    Text("High").tag(TodoPriority.high)
-                    Text("Urgent").tag(TodoPriority.urgent)
+                    Text("Low").tag(1)
+                    Text("Normal").tag(5)
+                    Text("High").tag(7)
+                    Text("Urgent").tag(9)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -137,7 +137,7 @@ struct TodoDetailView: View {
     // MARK: - Subtasks
 
     @ViewBuilder
-    private func subtasksSection(parent: Todo) -> some View {
+    private func subtasksSection(parent: UserListItem) -> some View {
         let liveSubtasks = parent.subtasks
             .filter { !$0.isArchived }
             .sorted { lhs, rhs in
@@ -179,7 +179,7 @@ struct TodoDetailView: View {
     }
 
     @ViewBuilder
-    private func subtaskDetailRow(sub: Todo) -> some View {
+    private func subtaskDetailRow(sub: UserListItem) -> some View {
         HStack(spacing: 8) {
             Button {
                 completeSubtask(sub)
@@ -191,7 +191,7 @@ struct TodoDetailView: View {
 
             NavigationLink(value: sub.id) {
                 HStack(spacing: 6) {
-                    Text(sub.title)
+                    Text(sub.text)
                         .strikethrough(sub.isCompleted)
                         .foregroundStyle(sub.isCompleted ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
                     if let d = sub.dueDate {
@@ -221,7 +221,7 @@ struct TodoDetailView: View {
     // MARK: - Delete
 
     @ViewBuilder
-    private func deleteButton(for todo: Todo) -> some View {
+    private func deleteButton(for todo: UserListItem) -> some View {
         Button(role: .destructive) {
             archiveTodo(todo)
         } label: {
@@ -257,7 +257,7 @@ struct TodoDetailView: View {
         }
     }
 
-    private func completeSubtask(_ sub: Todo) {
+    private func completeSubtask(_ sub: UserListItem) {
         do {
             try CompleteTodoTool.performAction(todoID: sub.id, modelContainer: modelContext.container)
         } catch {
@@ -265,7 +265,7 @@ struct TodoDetailView: View {
         }
     }
 
-    private func addSubtask(parent: Todo) {
+    private func addSubtask(parent: UserListItem) {
         let trimmed = newSubtaskTitle.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         do {
@@ -281,12 +281,12 @@ struct TodoDetailView: View {
         }
     }
 
-    private func archiveSubtask(_ sub: Todo) {
+    private func archiveSubtask(_ sub: UserListItem) {
         do {
             let result = try DeleteTodoTool.performAction(todoID: sub.id, modelContainer: modelContext.container)
             onArchived(PendingUndo(
-                title: result.todo.title,
-                archivedTodoID: result.todo.id,
+                title: result.item.text,
+                archivedTodoID: result.item.id,
                 archivedSubtaskIDs: result.archivedSubtaskIDs,
                 expiresAt: Date().addingTimeInterval(5)
             ))
@@ -295,12 +295,12 @@ struct TodoDetailView: View {
         }
     }
 
-    private func archiveTodo(_ todo: Todo) {
+    private func archiveTodo(_ todo: UserListItem) {
         do {
             let result = try DeleteTodoTool.performAction(todoID: todo.id, modelContainer: modelContext.container)
             onArchived(PendingUndo(
-                title: result.todo.title,
-                archivedTodoID: result.todo.id,
+                title: result.item.text,
+                archivedTodoID: result.item.id,
                 archivedSubtaskIDs: result.archivedSubtaskIDs,
                 expiresAt: Date().addingTimeInterval(5)
             ))
@@ -312,10 +312,10 @@ struct TodoDetailView: View {
 
     // MARK: - Loading + dirty tracking
 
-    private func loadIfNeeded(from todo: Todo) {
+    private func loadIfNeeded(from todo: UserListItem) {
         guard !didLoad else { return }
-        editTitle = todo.title
-        editNotes = todo.notes
+        editTitle = todo.text
+        editNotes = todo.notes ?? ""
         hasDueDate = todo.dueDate != nil
         dueDate = todo.dueDate ?? Date()
         priority = todo.priority
@@ -325,8 +325,8 @@ struct TodoDetailView: View {
 
     private var hasUnsavedChanges: Bool {
         guard let todo, didLoad else { return false }
-        if editTitle != todo.title { return true }
-        if editNotes != todo.notes { return true }
+        if editTitle != todo.text { return true }
+        if editNotes != (todo.notes ?? "") { return true }
         if hasDueDate != (todo.dueDate != nil) { return true }
         if hasDueDate, let cur = todo.dueDate, !Calendar.current.isDate(cur, inSameDayAs: dueDate) { return true }
         if priority != todo.priority { return true }

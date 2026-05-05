@@ -212,11 +212,12 @@ final class CompactMemoryGenerator {
             events = []
         }
 
-        // Todos completed today.
+        // Todos completed today (4.8c — backing entity is UserListItem). Predicate
+        // filters at the row level identically to the pre-4.8c Todo query.
         let todoContext = ModelContext(modelContainer)
-        let allCompletedDescriptor = FetchDescriptor<Todo>(
-            predicate: #Predicate<Todo> {
-                $0.isCompleted == true && $0.isArchived == false && $0.parentTodo == nil
+        let allCompletedDescriptor = FetchDescriptor<UserListItem>(
+            predicate: #Predicate<UserListItem> {
+                $0.isCompleted == true && $0.isArchived == false && $0.parentItem == nil
             }
         )
         let allCompleted = (try? todoContext.fetch(allCompletedDescriptor)) ?? []
@@ -246,7 +247,7 @@ final class CompactMemoryGenerator {
         return CompactMemoryPrompts.TodayInputs(
             now: now,
             calendarEvents: events,
-            completedTodosTodayTitles: completedToday.map { $0.title },
+            completedTodosTodayTitles: completedToday.map { $0.text },
             memoryTurns: turns,
             previousTodayBody: previousTodayBody
         )
