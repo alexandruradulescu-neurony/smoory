@@ -141,35 +141,78 @@ A lightweight, often inferred grouping of related activity (emails, replies, tod
 
 ---
 
-## Todo
+## Todo (REMOVED in 4.8c — see UserListItem)
 
-The day-to-day tactical unit. Most numerous entity in the system.
+The Todo entity was retired in milestone 4.8c. Every capability — fields, tools, surfaces, snapshot writes — moved into `UserListItem`. The chat-side semantics ("create a todo", "complete it") are unchanged because the tools kept their names; only the underlying entity flipped. Chat-created todos land in an auto-managed `UserList` titled "Todos".
+
+See DECISIONS.md §4.6 (UserList introduction), §4.8b (capability absorption), §4.8c (entity removal + migration of every caller). The list of fields the migration carried over: title→`text`, notes (now optional), dueDate, priority (now Int 0–9 EK scale, was 4-bucket TodoPriority), isCompleted, completedAt, deferredFrom, deferralCount, source (now `UserListItemSource`), relatedPeople, parentTodo→`parentItem`, subtasks, isArchived, archivedAt, plus 4.8a additions (`hasTime`, `urlString`) and 4.8d's `recurrenceRule`.
+
+---
+
+## UserList
+
+User-curated collection (groceries, reading list, packing list, todos). Introduced in 4.6; absorbed Todo's capabilities by 4.8c.
 
 **Fields:**
-- `role: Role?`
-- `parentProject: Project?`
-- `parentThread: Thread?`
+- `id: UUID`
 - `title: String`
-- `notes: String`
-- `dueDate: Date?`
-- `priority: TodoPriority` — `.low, .normal, .high, .urgent`
-- `isCompleted: Bool`
-- `completedAt: Date?`
-- `deferredFrom: Date?` — original due date if deferred
-- `deferralCount: Int` — how many times this todo has been deferred (signal for prioritization)
-- `source: TodoSource` — enum tracking origin: `.user_chat, .user_quickadd, .ai_proposal, .email_extraction, .calendar_extraction, .manual`
-- `relatedPeople: [Person]` — people referenced (e.g. "call Maria")
-- `parentTodo: Todo?` — for subtasks, points to the parent Todo. `nil` for top-level todos.
-- `subtasks: [Todo]` — children. Empty for childless todos AND for subtasks themselves (one level of nesting only).
-- `isArchived: Bool` — soft-delete flag set by `delete_todo`. Archived todos are filtered out of the surface and out of `get_open_todos`. See `DECISIONS.md` "Soft-delete via isArchived."
-- `archivedAt: Date?` — set when `isArchived` flips to true.
+- `kindRaw: Int` (`UserListKind.checklist = 0`, `.notes = 1`)
+- `isArchived: Bool` + `archivedAt: Date?` — soft delete
+- `eventKitIdentifier: String?` — paired EKCalendar identifier (4.7); nil for notes-kind, pre-permission, or unsynced
+- `resetCadenceRaw: Int` (4.8d, `UserListResetCadence`: `.none = 0, .daily, .weekly, .monthly`) — auto-reset cadence; clears `isCompleted` on every item at the next boundary
+- `lastResetAt: Date?` — when the auto-reset last ran
+- `items: [UserListItem]` — cascade-deleted with the list
+- `createdAt`, `updatedAt`
 
-**Behavior notes:**
-- Smoory can propose, user confirms (tier 1).
-- Defer with reason captured for pattern observation in week reviews.
-- Subtasks are full Todos with `parentTodo` set. They share the same fields, the same tools, and the same memory side effects as top-level todos.
-- Subtasks cannot have their own subtasks. This is enforced at insertion time: a Todo's `parentTodo` must itself have `parentTodo == nil`. The constraint is also reflected in `create_subtask`'s validation logic.
-- The parent's "completion fraction" (e.g., `3/5`) is computed from `subtasks.filter { $0.isCompleted }.count` over `subtasks.count` at render time, not stored. The parent's `isCompleted` flag is independent of subtask state — completing all subtasks does NOT auto-complete the parent. This preserves user intent: the user might have non-subtask work to finish before considering the parent done.
+**Behavior:**
+- Notes-kind lists never sync to Reminders (Reminders has no notes-only concept).
+- Auto-reset runs on app foreground via `UserList.runResetSweepIfDue`; only checklist-kind, non-archived lists are eligible.
+- The auto-managed "Todos" list (created on first use) holds chat-created tactical items previously stored as `Todo` rows.
+
+---
+
+## UserListItem
+
+A row in a `UserList`. Replaced `Todo` in 4.8c.
+
+**Fields:**
+- `id: UUID`
+- `text: String` — the item body (was Todo.title)
+- `isCompleted: Bool` + `completedAt: Date?`
+- `order: Int` — display order; new items append via `UserList.nextItemOrder`
+- `eventKitIdentifier: String?` — paired EKReminder identifier (4.7)
+- **Reminders-parity fields (4.8a):** `notes: String?`, `priority: Int = 0` (EK 0–9 scale; `priorityBucket` exposes a `{none, low, medium, high}` projection), `dueDate: Date?`, `hasTime: Bool` (date-only vs date+time), `urlString: String?`
+- **Recurrence (4.8d):** `recurrenceRule: String?` — canonical RFC 5545 RRULE; `RecurrenceRule` type handles parse / serialize / EKRecurrenceRule round-trip
+- **Todo-absorption fields (4.8b):** `parentItem: UserListItem?` + `subtasks: [UserListItem]` (cascade-delete inverse), `role: Role?`, `parentProject: Project?`, `parentThread: Thread?`, `relatedPeople: [Person]`, `sourceRaw: Int` (`UserListItemSource`: same case set as the retired `TodoSource`), `deferralCount: Int`, `deferredFrom: Date?`, `isArchived: Bool` + `archivedAt: Date?`
+- `list: UserList?` — inverse to `UserList.items`
+- `createdAt`, `updatedAt`
+
+**Behavior notes (Todo carry-overs):**
+- "Todo-shaped" filter for the legacy Todos surface and `get_open_todos` chat tool: any item with a due date, priority > 0, or a role/project/thread anchor. Plain shopping/reading list rows (no signals) are excluded so they don't pollute the Todos view.
+- Subtasks are full UserListItems with `parentItem` set; one level of nesting; share the same tools.
+- Defer-with-reason still captured for pattern observation: `deferralCount` increments, `deferredFrom` records the prior date, and the reason is appended to `notes`.
+
+---
+
+## OffPeriod
+
+User-stated stretch of unavailability. Introduced in 4.9 to replace the Phase 3 stopgap (availability candidates persisted as semantic facts tagged `"availability"`).
+
+**Fields:**
+- `id: UUID`
+- `startDate: Date`
+- `endDate: Date`
+- `kindRaw: Int` (`OffPeriodKind`: `.vacation, .sick, .holiday, .personal, .other`)
+- `notes: String`
+- `role: Role?` — nil = applies to all roles; lets the user be off-from-work but available-for-personal
+- `sourceCandidateID: UUID?` — audit link back to the structuring CandidateWrite that produced the row
+- `createdAt`, `updatedAt`
+
+**Behavior:**
+- Created from confirmed `.availability` candidates. Tool-side `create_off_period` deferred to 4.9.x.
+- After insert, `OffPeriodProposalGenerator` writes one `FeedItem.offPeriodConflict` per todo whose `dueDate` overlaps `[startDate, endDate]`. Calendar-event conflicts are surfaced informationally only — auto-decline waits for calendar write (v2+).
+- `get_off_periods` chat tool reads active + upcoming periods.
+- Settings → "Time off" lists current/upcoming with delete affordance.
 
 ---
 

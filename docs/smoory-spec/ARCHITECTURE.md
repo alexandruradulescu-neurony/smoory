@@ -313,12 +313,13 @@ The user reviews these in batches when convenient. Confirmed candidates become r
 | Calendar | EventKit | NSCalendarsFullAccessUsageDescription | yes | v2+ |
 | Contacts | Contacts | NSContactsUsageDescription | yes | yes |
 | Mail | AppleScript + direct file read | (none, but Automation prompt) | yes | yes (via send AppleScript) |
-| Reminders | EventKit | NSRemindersFullAccessUsageDescription | v2+ | v2+ |
+| Reminders | EventKit | NSRemindersFullAccessUsageDescription | yes (4.7) | yes (4.7) |
+| Speech / dictation | Speech + AVAudioEngine | NSSpeechRecognitionUsageDescription, NSMicrophoneUsageDescription | yes (4.11) | n/a |
 | Notifications | UserNotifications | provisional | n/a | yes |
 | Background | BGTaskScheduler | (none) | n/a | n/a |
 | Keychain | Security | (none) | yes | yes |
 
-Reminders integration is deferred (see DECISIONS.md). Calendar writing is v2+.
+Reminders integration shipped in 4.7 (bidirectional sync, opt-in via Settings). Speech / dictation shipped in 4.11 (review-sheet input bars only). Calendar writing is still v2+.
 
 ---
 

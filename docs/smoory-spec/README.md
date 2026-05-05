@@ -89,19 +89,37 @@ Apple Mail integration: Mail Rule trigger, AppleScript for send, local Mail data
 
 **Done when:** Smoory reads your mail, surfaces what matters, drafts replies on demand, manages threads.
 
+### Phase 4 sub-milestones (extensions shipped post-Phase-4 main)
+This list is the running log of what landed after the Phase 4 mainline work. Each entry has a corresponding `DECISIONS.md §4.x` section.
+
+- **4.0** — System prompt overhaul: retrieval discipline (always call calendar + memory together), time reasoning rules, voice cleanup (no emojis, no performative warmth, declarative endings).
+- **4.1–4.5** — Live widget data, compact memory wiring, fact lifecycle/supersession, salience-gated batched fact extraction, day-end fact restructuring.
+- **4.6** — User Lists feature (UserList + UserListItem entities, 7 chat tools, dedicated Lists sidebar surface). Distinct from Todo; checklist-kind and notes-kind.
+- **4.6.1** — `rename_list` and `reorder_list_items` chat tools.
+- **4.7** — Apple Reminders bidirectional sync via EventKit. Opt-in toggle in Settings, last-writer-wins on conflicts, push triggers via `EKEventStoreChanged`.
+- **4.7.1** — Surface partial-permission errors instead of silent toggle revert.
+- **4.8a** — Reminders-parity fields on `UserListItem` (notes, priority, due date, URL).
+- **4.8b** — Absorb Todo capabilities (subtasks, role/project/thread links, source, deferral) into `UserListItem`.
+- **4.8c** — Remove Todo entity entirely; route every caller (tools, surfaces, pipeline, widget, debug) to `UserListItem`. The auto-managed "Todos" UserList holds chat-created tactical items.
+- **4.8d** — Item-level recurrence (RRULE round-trip with EK) + list-level auto-reset cadence (the "groceries reset weekly" pattern).
+- **4.9** — Availability promoted from a stopgap fact tag to a proper `OffPeriod` entity, with a proactive proposal generator that surfaces todo conflicts as Feed cards.
+- **4.10** — End-of-day shutdown ritual. Operational counterpart to the day review (closing-down tone, 3–5 turn arc, tomorrow prep) with its own scheduled-action kind, prompt, and sheet.
+- **4.11** — Voice dictation in day-review, week-review, and end-of-day input bars via `SFSpeechRecognizer` + `AVAudioEngine`.
+
 ### Beyond phase 4
-- Capture from beyond email and chat (PDF drop, article save, voice memos)
+- Email layer (Apple Mail) — Phase 4 mainline was framed around email; the email-specific work is still ahead.
+- Capture from beyond email and chat (PDF drop, article save, voice memos for general capture rather than dictation)
 - Cross-everything search
 - Calendar writing (propose blocks, schedule sessions, defer meetings)
 - Money/finance layer
-- End-of-day shutdown ritual
 - Postgres migration if hema outgrows sqlite
 - iPhone client
 - iCloud sync
-- Apple Reminders sync
 - Habits as a dedicated tracked module
 
 These are explicitly **out of scope for v1**. Don't build them yet.
+
+(Items moved to "shipped" in 4.x: Apple Reminders sync — now live as of 4.7. End-of-day shutdown ritual — now live as of 4.10.)
 
 ---
 
@@ -114,7 +132,9 @@ These are explicitly **out of scope for v1**. Don't build them yet.
 - **Embeddings:** Apple's `NLEmbedding` (on-device, free, 300-dim). Swappable for higher-quality embeddings later if needed.
 - **AI provider:** Anthropic API. Default model `claude-sonnet-4-6` for chat and most reasoning. `claude-opus-4-7` reserved for the heaviest tasks (week-review pattern observation, complex draft generation). `claude-haiku-4-5` for cheap classification calls (triage).
 - **Calendar:** EventKit (`NSCalendarsFullAccessUsageDescription` in Info.plist)
+- **Reminders:** EventKit (`NSRemindersFullAccessUsageDescription`) — bidirectional sync of checklist-kind UserLists shipped in 4.7
 - **Contacts:** Contacts framework (`NSContactsUsageDescription` in Info.plist)
+- **Speech / dictation:** Speech framework + AVAudioEngine (`NSSpeechRecognitionUsageDescription`, `NSMicrophoneUsageDescription`) — used by day-review / week-review / end-of-day input bars (4.11)
 - **Email:** AppleScript (via `osascript` or `NSAppleScript`) for send and rules-triggered access; direct read of `~/Library/Mail/V*/...` `.emlx` files for fast access
 - **Mail Rules:** user installs one rule that runs an AppleScript hook on every incoming message, which pokes Smoory via a local socket or file watcher
 - **API key storage:** Keychain via `Security` framework

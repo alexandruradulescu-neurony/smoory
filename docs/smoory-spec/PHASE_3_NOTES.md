@@ -52,13 +52,15 @@ Onboarding 'Skip for now' is one-shot in v1 — user can't trigger it again from
 
 ---
 
-## Open gap from Phase 2 — Availability candidates not proactive
+## ~~Open gap from Phase 2 — Availability candidates not proactive~~ — RESOLVED in 4.9
 
-**Decided in milestone 2.4 (2026-04-30).**
+**Decided in milestone 2.4 (2026-04-30); resolved in milestone 4.9 (2026-05-04).**
 
-Availability candidates currently go to the queue like any other candidate. Spec describes immediate proactive proposals (defer todos, decline meetings, set OOO) when the user states an availability change like 'I'll be off Tuesday'. Implement when first round of usage tells us whether the queue-and-confirm flow feels too slow for this specific case.
+Resolution: 4.9 introduced the `OffPeriod` SwiftData entity (kept as a separate entity rather than a `Schedule` extension), rewired `CandidateAcceptor.availability` to insert OffPeriod rows instead of tag-availability facts, and added `OffPeriodProposalGenerator` to surface conflicting todos as feed cards (via `FeedItemKind.offPeriodConflict`). See DECISIONS.md §4.9.
 
-Stopgap acceptance behavior (2.4): availability candidates are written as semantic facts with tag `["availability"]` and the user-stated end date as `expiresAt`. There is no `Availability` or `OffPeriod` entity yet — `Schedule` is for repeating brief/review schedules and is the wrong fit. Phase 3 should decide: introduce `OffPeriod`, reuse `Schedule` with a kind extension, or keep facts-as-availability and read them via tag query when proactive proposals run.
+Calendar conflict surfacing is still partial — 4.9 surfaces nothing on the calendar side because calendar write is v2+. When calendar write lands, the generator's TODO at the bottom of `proposeConflicts` becomes a real branch.
+
+Pre-4.9 stopgap availability facts (tag `["availability"]`) remain in hema unchanged; no migration ran. New writes route through `OffPeriod` only.
 
 ---
 
