@@ -34,9 +34,11 @@ struct SettingsView: View {
     @State private var isSyncingReminders: Bool = false
     @State private var lastReminderSyncSummary: String?
     @State private var permissionAlertContent: PermissionAlertContent?
-    @State private var dayReviewVM: DayReviewSettingsViewModel?
-    @State private var morningBriefVM: MorningBriefSettingsViewModel?
-    @State private var weekReviewVM: WeekReviewSettingsViewModel?
+    // F-17 audit fix: the three review-schedule VMs used to be `@State var ...?`
+    // initialized lazily in `.onAppear`. Toggles flickered as briefly disabled on
+    // rapid Settings re-entry while VMs constructed. They now live inside
+    // ReviewScheduleSettings, which receives modelContainer + service via init
+    // and constructs them eagerly with `_dayReviewVM = State(wrappedValue: ...)`.
 
     @Bindable private var failureCounter = StructuringFailureCounter.shared
     @Bindable private var briefFailureCounter = MorningBriefFailureCounter.shared
@@ -90,17 +92,10 @@ struct SettingsView: View {
                 APIKeySectionContent(viewModel: voyageVM)
             }
 
-            if let dayReviewVM {
-                dayReviewSection(viewModel: dayReviewVM)
-            }
-
-            if let morningBriefVM {
-                morningBriefSection(viewModel: morningBriefVM)
-            }
-
-            if let weekReviewVM {
-                weekReviewSection(viewModel: weekReviewVM)
-            }
+            ReviewScheduleSettings(
+                modelContainer: modelContext.container,
+                service: scheduledActionService
+            )
 
             Section("Notifications") {
                 HStack {
@@ -246,24 +241,6 @@ struct SettingsView: View {
         .onAppear {
             Task { await refreshNotificationStatus() }
             refreshRemindersAuthStatus()
-            if dayReviewVM == nil {
-                dayReviewVM = DayReviewSettingsViewModel(
-                    modelContainer: modelContext.container,
-                    service: scheduledActionService
-                )
-            }
-            if morningBriefVM == nil {
-                morningBriefVM = MorningBriefSettingsViewModel(
-                    modelContainer: modelContext.container,
-                    service: scheduledActionService
-                )
-            }
-            if weekReviewVM == nil {
-                weekReviewVM = WeekReviewSettingsViewModel(
-                    modelContainer: modelContext.container,
-                    service: scheduledActionService
-                )
-            }
         }
     }
 
@@ -463,66 +440,6 @@ struct SettingsView: View {
         }
     }
 
-    @ViewBuilder
-    private func weekReviewSection(viewModel: WeekReviewSettingsViewModel) -> some View {
-        @Bindable var vm = viewModel
-        Section("Week review") {
-            Toggle("Enable weekly review", isOn: $vm.weekReviewEnabled)
-            if vm.weekReviewEnabled {
-                Picker("Day", selection: $vm.weekReviewDayOfWeek) {
-                    ForEach(1...7, id: \.self) { day in
-                        Text(WeekReviewSettingsViewModel.weekdayName(day)).tag(day)
-                    }
-                }
-                DatePicker(
-                    "Time",
-                    selection: $vm.weekReviewTime,
-                    displayedComponents: [.hourAndMinute]
-                )
-                Text("Smoory will check in once a week to reflect on patterns and progress.")
-                    .font(.smoory_caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func morningBriefSection(viewModel: MorningBriefSettingsViewModel) -> some View {
-        @Bindable var vm = viewModel
-        Section("Morning brief") {
-            Toggle("Enable morning brief", isOn: $vm.morningBriefEnabled)
-            if vm.morningBriefEnabled {
-                DatePicker(
-                    "Time",
-                    selection: $vm.morningBriefTime,
-                    displayedComponents: [.hourAndMinute]
-                )
-                Text("Smoory will prepare a daily focus brief at this time. Allow ~30s for generation.")
-                    .font(.smoory_caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func dayReviewSection(viewModel: DayReviewSettingsViewModel) -> some View {
-        @Bindable var vm = viewModel
-        Section("Day review") {
-            Toggle("Enable evening day review", isOn: $vm.dayReviewEnabled)
-
-            if vm.dayReviewEnabled {
-                DatePicker(
-                    "Time",
-                    selection: $vm.dayReviewTime,
-                    displayedComponents: [.hourAndMinute]
-                )
-                Text("Smoory will check in at this time each evening to reflect on the day.")
-                    .font(.smoory_caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-    }
-
     private var notificationStatusText: String {
         switch notificationStatus {
         case .authorized, .provisional, .ephemeral: "Notifications: enabled"
@@ -546,6 +463,100 @@ private struct PermissionAlertContent: Identifiable {
     let title: String
     let message: String
     let showOpenSettingsButton: Bool
+}
+
+/// F-17 audit fix: review-schedule VMs (day / morning brief / week) used to live as
+/// `@State var ...?` on SettingsView and were lazily initialized in `.onAppear`. On
+/// rapid Settings re-entry the toggles flickered briefly disabled while construction
+/// raced the first body draw. This wrapper takes the env-derived dependencies via
+/// `init(...)` and constructs the three VMs eagerly via `_xxxVM = State(wrappedValue:)`,
+/// so the sections render fully populated on the very first paint.
+private struct ReviewScheduleSettings: View {
+    @State private var dayReviewVM: DayReviewSettingsViewModel
+    @State private var morningBriefVM: MorningBriefSettingsViewModel
+    @State private var weekReviewVM: WeekReviewSettingsViewModel
+
+    init(modelContainer: ModelContainer, service: ScheduledActionService?) {
+        _dayReviewVM = State(wrappedValue: DayReviewSettingsViewModel(
+            modelContainer: modelContainer,
+            service: service
+        ))
+        _morningBriefVM = State(wrappedValue: MorningBriefSettingsViewModel(
+            modelContainer: modelContainer,
+            service: service
+        ))
+        _weekReviewVM = State(wrappedValue: WeekReviewSettingsViewModel(
+            modelContainer: modelContainer,
+            service: service
+        ))
+    }
+
+    var body: some View {
+        Group {
+            dayReviewSection
+            morningBriefSection
+            weekReviewSection
+        }
+    }
+
+    @ViewBuilder
+    private var dayReviewSection: some View {
+        @Bindable var vm = dayReviewVM
+        Section("Day review") {
+            Toggle("Enable evening day review", isOn: $vm.dayReviewEnabled)
+            if vm.dayReviewEnabled {
+                DatePicker(
+                    "Time",
+                    selection: $vm.dayReviewTime,
+                    displayedComponents: [.hourAndMinute]
+                )
+                Text("Smoory will check in at this time each evening to reflect on the day.")
+                    .font(.smoory_caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var morningBriefSection: some View {
+        @Bindable var vm = morningBriefVM
+        Section("Morning brief") {
+            Toggle("Enable morning brief", isOn: $vm.morningBriefEnabled)
+            if vm.morningBriefEnabled {
+                DatePicker(
+                    "Time",
+                    selection: $vm.morningBriefTime,
+                    displayedComponents: [.hourAndMinute]
+                )
+                Text("Smoory will prepare a daily focus brief at this time. Allow ~30s for generation.")
+                    .font(.smoory_caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var weekReviewSection: some View {
+        @Bindable var vm = weekReviewVM
+        Section("Week review") {
+            Toggle("Enable weekly review", isOn: $vm.weekReviewEnabled)
+            if vm.weekReviewEnabled {
+                Picker("Day", selection: $vm.weekReviewDayOfWeek) {
+                    ForEach(1...7, id: \.self) { day in
+                        Text(WeekReviewSettingsViewModel.weekdayName(day)).tag(day)
+                    }
+                }
+                DatePicker(
+                    "Time",
+                    selection: $vm.weekReviewTime,
+                    displayedComponents: [.hourAndMinute]
+                )
+                Text("Smoory will check in once a week to reflect on patterns and progress.")
+                    .font(.smoory_caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
 }
 
 private struct APIKeySectionContent: View {
