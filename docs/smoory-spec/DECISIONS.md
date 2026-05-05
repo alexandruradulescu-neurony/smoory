@@ -728,6 +728,34 @@ Per CLAUDE.md SwiftData rules: relations optional, no `@Attribute(.unique)`, def
 
 ---
 
+## SwiftData enum-storage migration policy (post-stateRaw lessons)
+
+**Background:** A field-level audit fix (`FeedItem.stateRaw`, F-1) replaced a stored `var state: FeedItemState` with a new `var stateRaw: Int = …` plus a computed accessor. SwiftData's lightweight migration silently dropped existing values — every row's `state` reverted to default `.active`, surfacing as 10 stale morning briefs in the Feed. Fixed via a self-healing sweep, but the underlying landmine remains for any future enum-to-raw conversion.
+
+**Fields currently stored as enum directly (no `*Raw` companion):**
+- `Goal.goalType: GoalType`
+- `Goal.status: GoalStatus`
+- `CaptureItem.kind: CaptureKind`
+- `CaptureItem.source: CaptureSource`
+- `Habit.targetCadence: Cadence`
+- `FeedItem.confirmationTier: ConfirmationTier`
+- `Profile.editedBy: ProfileEditedBy`
+- `RuleAdjustment.kind: RuleKind`
+- `Thread.status: ThreadStatus`
+- `Infrastructure.category: InfraCategory`
+
+**Policy for converting any of these to `*Raw: Int` + computed accessor:**
+
+The naive single-release swap (drop `state`, add `stateRaw`) loses data. The safe sequence is:
+1. **Release N:** add `*Raw: Int` as a *new* field with default value, alongside the existing stored enum field. Set `*Raw = enumField.rawValue` in any model write paths so both stay in sync. Ship and let users run on it.
+2. **Release N+1:** read the enum value from `*Raw`, swap `enumField` to the computed accessor over `*Raw`, and remove writes to the now-vestigial enum store. Lightweight migration on N+1 is safe because every row already has a populated `*Raw`.
+
+Single-user fictitious-data context (current state of Smoory) lets us skip this dance for now — just do `Debug → Reset hema` after the swap. Once we have real users, the two-step migration is mandatory.
+
+**For new fields:** prefer the `*Raw: Int` + computed pattern from the start, mirroring `FeedItem.stateRaw / .state`. Saves the future migration step.
+
+---
+
 ## ErrorBus — single shared mutation-error toast (audit fix F-23)
 
 **Decision:** A single app-level `ErrorBus` (`@Observable`, `@MainActor`) owns the active mutation-error toast and is injected via `@Environment(\.errorBus)`. `ContentView` renders a top-anchored `ErrorBannerOverlay` driven by it. Mutation handlers across the app call `errorBus?.report("Couldn't … : …")` instead of `print(…)` and silently swallowing.
