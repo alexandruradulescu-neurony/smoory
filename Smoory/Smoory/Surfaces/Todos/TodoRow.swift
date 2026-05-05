@@ -33,7 +33,7 @@ struct TodoRow: View {
                             DueDatePill(dueDate: dueDate, group: DueDateGroup.group(for: todo))
                         }
                         if todo.priorityBucket != .none {
-                            PriorityIndicator(priority: todo.priority)
+                            PriorityIndicator(bucket: todo.priorityBucket)
                         }
                         if let role = todo.role {
                             RoleBadge(name: role.name, colorHex: role.colorHex)

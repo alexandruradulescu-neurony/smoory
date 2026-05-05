@@ -53,13 +53,11 @@ struct UserListItemRow: View {
     @ViewBuilder
     private var badgeRow: some View {
         HStack(spacing: 6) {
-            if let symbol = item.priorityBucket.symbolName {
-                Label(item.priorityBucket.displayLabel, systemImage: symbol)
-                    .labelStyle(.iconOnly)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(priorityColor(item.priorityBucket))
-                    .help("\(item.priorityBucket.displayLabel) priority")
-            }
+            // F-5/F-9 audit fix: previous code rendered priority via a local Label +
+            // `priorityColor` helper. Both call sites (TodoRow + UserListItemRow) now
+            // share `PriorityIndicator(bucket:)` so the icon/tint mapping lives in
+            // one place.
+            PriorityIndicator(bucket: item.priorityBucket)
             if let due = item.dueDate {
                 Label(formattedDue(due, hasTime: item.hasTime), systemImage: "calendar")
                     .font(.caption2)
@@ -80,15 +78,6 @@ struct UserListItemRow: View {
                 .foregroundStyle(.secondary)
                 .help(url.absoluteString)
             }
-        }
-    }
-
-    private func priorityColor(_ bucket: UserListItem.PriorityBucket) -> Color {
-        switch bucket {
-        case .none: return .secondary
-        case .low: return .gray
-        case .medium: return .orange
-        case .high: return .red
         }
     }
 

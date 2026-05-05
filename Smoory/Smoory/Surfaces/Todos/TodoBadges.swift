@@ -31,35 +31,37 @@ struct DueDatePill: View {
 }
 
 struct PriorityIndicator: View {
-    /// EK-style 0–9 priority used by `UserListItem`. 0 = no badge; 1–4 low, 5 normal,
-    /// 6–8 high, 9 urgent. Mirrors the bucket mapping in `UserListItem.PriorityBucket`.
-    let priority: Int
+    /// F-5/F-9 audit fix: takes `UserListItem.PriorityBucket` directly instead of the
+    /// raw EK 0–9 int so callers can't accidentally pass the wrong scale, and the
+    /// glyph/tint mapping lives in one place. Bucket is the canonical UI surface.
+    let bucket: UserListItem.PriorityBucket
 
     var body: some View {
-        if priority == 0 || priority == 5 {
+        if bucket == .none {
             EmptyView()
         } else {
             Image(systemName: glyph)
                 .font(.caption2)
                 .foregroundStyle(tint)
+                .help("\(bucket.displayLabel) priority")
         }
     }
 
     private var glyph: String {
-        switch priority {
-        case 9: return "exclamationmark.2"
-        case 6...8: return "exclamationmark"
-        case 1...4: return "arrow.down"
-        default: return ""
+        switch bucket {
+        case .none: return ""
+        case .low: return "arrow.down"
+        case .medium: return "exclamationmark"
+        case .high: return "exclamationmark.2"
         }
     }
 
     private var tint: Color {
-        switch priority {
-        case 9: return .red
-        case 6...8: return .orange
-        case 1...4: return .secondary
-        default: return .clear
+        switch bucket {
+        case .none: return .clear
+        case .low: return .secondary
+        case .medium: return .orange
+        case .high: return .red
         }
     }
 }
