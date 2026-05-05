@@ -4,6 +4,10 @@ import SwiftUI
 struct TodosView: View {
     @Environment(\.modelContext) private var modelContext
 
+    /// F-4 audit fix: client-side filtered by `TodosViewModel.groupedTodos`. The query is
+    /// intentionally unfiltered because "todo-shapedness" mixes signals (due date, priority,
+    /// non-empty subtasks, parent list = auto-Todos) that #Predicate can't express cleanly.
+    /// Do NOT assume rows here are todo-shaped — always run them through the view-model.
     @Query(sort: \UserListItem.createdAt, order: .reverse) private var allTodos: [UserListItem]
     @State private var viewModel = TodosViewModel()
     @State private var expandedTodoIDs: Set<UUID> = []

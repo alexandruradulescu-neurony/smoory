@@ -29,6 +29,9 @@ struct OnboardingPromptSheet: View {
             .padding(.top, 4)
         }
         .padding(40)
-        .frame(minWidth: 460, idealWidth: 520)
+        // F-21 audit fix: hard `minWidth: 460` clipped the sheet on narrower app windows.
+        // Drop the min and let the text reflow; ideal/max keep the comfortable reading
+        // width when there's room.
+        .frame(idealWidth: 520, maxWidth: 600)
     }
 }

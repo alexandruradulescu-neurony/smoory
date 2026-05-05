@@ -25,10 +25,14 @@ struct ListsView: View {
     var body: some View {
         NavigationStack {
             HSplitView {
+                // F-8 audit fix: previous constraints (picker minWidth 220 + item minWidth 360)
+                // exceeded the ContentView min on narrow windows, compressing the right pane
+                // until items clipped. Drop idealWidth so the user can collapse the picker,
+                // and lower mins so the layout degrades gracefully.
                 listPickerColumn
-                    .frame(minWidth: 220, idealWidth: 260, maxWidth: 360)
+                    .frame(minWidth: 180, maxWidth: 360)
                 itemColumn
-                    .frame(minWidth: 360)
+                    .frame(minWidth: 320)
             }
             .navigationTitle(Surface.lists.title)
             .toolbar {
@@ -304,11 +308,17 @@ struct UserListDetail: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            Image(systemName: "plus.rectangle.on.rectangle")
+            Image(systemName: list.isArchived ? "archivebox" : "plus.rectangle.on.rectangle")
                 .font(.title)
                 .foregroundStyle(.secondary)
-            Text("Add an item below to get started.")
+            // F-11 audit fix: archived lists disable the input bar, so prompting the user
+            // to "add an item below" is misleading — the field is read-only. Branch the
+            // copy so an archived empty list points at the Restore button instead.
+            Text(list.isArchived
+                 ? "This list is archived. Restore it from the header to add items."
+                 : "Add an item below to get started.")
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()

@@ -14,8 +14,12 @@ struct FeedItemRow: View {
                     .foregroundStyle(.secondary)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(item.headline)
+                    // F-3 audit fix: fall back when a producer persists a row with an empty
+                    // headline. Pre-fix, the bubble rendered as a thin band of nothing —
+                    // visually broken with no clue about which kind it was.
+                    Text(item.headline.isEmpty ? "(no summary)" : item.headline)
                         .font(.smoory_body)
+                        .foregroundStyle(item.headline.isEmpty ? .tertiary : .primary)
                         .lineLimit(isExpanded ? nil : 1)
                     if isExpanded && !item.body.isEmpty {
                         Text(item.body)
