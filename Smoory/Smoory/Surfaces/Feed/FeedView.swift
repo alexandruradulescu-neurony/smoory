@@ -39,15 +39,15 @@ private struct FeedListContent: View {
     )
     private var rejectedCandidates: [CandidateWrite]
 
-    // No predicate on FeedItem — SwiftData @Predicate can't access enum .rawValue, and direct
-    // enum comparison crashes the validator on FeedItemState. 2.5 has no FeedItem producers,
-    // so we fetch all and filter client-side. Future producers add small N here.
-    @Query(sort: \FeedItem.createdAt, order: .reverse)
-    private var allFeedItems: [FeedItem]
-
-    private var activeFeedItems: [FeedItem] {
-        allFeedItems.filter { $0.state == .active }
-    }
+    // F-1 audit fix: previously fetched all FeedItem rows and filtered client-side
+    // because `#Predicate` couldn't access enum .rawValue and direct enum comparison
+    // crashed the validator. The FeedItem schema now exposes `stateRaw: Int` so the
+    // predicate can hit SQLite directly.
+    @Query(
+        filter: #Predicate<FeedItem> { $0.stateRaw == 0 },  // 0 = FeedItemState.active.rawValue
+        sort: \FeedItem.createdAt, order: .reverse
+    )
+    private var activeFeedItems: [FeedItem]
 
     @State private var expandedRowID: UUID?
     @State private var actionError: String?

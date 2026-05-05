@@ -728,4 +728,16 @@ Per CLAUDE.md SwiftData rules: relations optional, no `@Attribute(.unique)`, def
 
 ---
 
+## FeedItem.stateRaw — durable @Predicate target (audit fix F-1)
+
+**Decision:** `FeedItem` gains a `var stateRaw: Int = FeedItemState.active.rawValue` field. The existing `state: FeedItemState` becomes a computed accessor over `stateRaw` (mirrors the `kindRaw` pattern already in the schema).
+
+**Why:** SwiftData `#Predicate` cannot dereference an enum's `.rawValue` and direct enum comparison on `FeedItemState` crashed the predicate validator. The Feed view's `@Query` previously fetched every `FeedItem` ever created and filtered to `.active` rows in Swift. Adding `stateRaw` lets the predicate filter at the SQLite layer, so the query scales as feed-item producers come online (morning brief, day-review summaries, off-period proposals).
+
+**CloudKit-compat impact:** None. New non-optional `Int` with a default value follows the same rules already in CLAUDE.md (defaults on non-optional properties, no @Attribute(.unique)).
+
+**Migration:** Smoory ships with fictitious data and no production users yet, so no explicit migration step is needed; SwiftData's lightweight migration backfills `stateRaw` from the default for any pre-existing rows on first open.
+
+---
+
 End of spec. Time to build.
