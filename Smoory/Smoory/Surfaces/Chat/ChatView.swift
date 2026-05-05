@@ -42,6 +42,11 @@ struct ChatView: View {
 private struct ChatViewContent: View {
     @Bindable var viewModel: ChatViewModel
     @FocusState private var isInputFocused: Bool
+
+    /// UI audit fix #22: parity with day-review / week-review / end-of-day sheets,
+    /// which all expose the mic via `VoiceMicButton`. Pre-fix, main chat had no
+    /// dictation affordance.
+    @Environment(\.voiceCaptureService) private var voiceService
     @State private var showOnboardingPrompt: Bool = false
 
     var body: some View {
@@ -154,6 +159,9 @@ private struct ChatViewContent: View {
                     submit()
                     return .handled
                 }
+            if let voiceService {
+                VoiceMicButton(service: voiceService, draft: $viewModel.draft)
+            }
             Button {
                 submit()
             } label: {

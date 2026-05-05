@@ -81,6 +81,12 @@ struct DayReviewSheet: View {
             .buttonStyle(.bordered)
             .keyboardShortcut("d", modifiers: [.command])
             .disabled(viewModel.turns.count < 2)
+            // UI audit fix #18: pre-fix the disabled state had no explanation; users
+            // saw a grayed Done button without knowing why. Tooltip surfaces the
+            // requirement on hover.
+            .help(viewModel.turns.count < 2
+                  ? "Add a reply first — Done is enabled after the conversation has at least one user turn."
+                  : "Wrap up the day review and write the summary turn.")
         }
         .padding()
     }

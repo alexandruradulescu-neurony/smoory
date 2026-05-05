@@ -84,6 +84,9 @@ struct EndOfDaySheet: View {
             .buttonStyle(.bordered)
             .keyboardShortcut("d", modifiers: [.command])
             .disabled(viewModel.turns.count < 2)
+            .help(viewModel.turns.count < 2
+                  ? "Add a reply first — Done is enabled once you've started the conversation."
+                  : "Wrap up the end-of-day session.")
         }
         .padding()
     }

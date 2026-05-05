@@ -69,8 +69,14 @@ final class WeekReviewViewModel {
         // If the user opened this sheet before for the same scheduled action, reuse
         // the persisted summary instead of re-running the LLM and re-emitting
         // CandidateWrite rows for the same insights.
+        // UI audit fix #20: cap analysis at 60 seconds. Pre-fix, an LLM stall could
+        // hang `isAnalyzing` indefinitely with no fallback — the AnalyzingView would
+        // show forever. Now we race against a timeout and fall back to a no-summary
+        // opener if the analyzer doesn't return.
         isAnalyzing = true
-        let result = await loadOrAnalyze()
+        let result = await withAnalysisTimeout(seconds: 60) {
+            await self.loadOrAnalyze()
+        }
         self.summary = result.summary
         isAnalyzing = false
 
@@ -301,5 +307,30 @@ final class WeekReviewViewModel {
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
         return (try? encoder.encode(value)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    /// UI audit fix #20: race the analyzer against a wall-clock timeout. If the
+    /// analyzer doesn't return within `seconds`, drop into the no-summary fallback
+    /// (`(nil, false)` so the opener uses the static prompt) instead of hanging the
+    /// AnalyzingView forever.
+    private func withAnalysisTimeout(
+        seconds: TimeInterval,
+        work: @escaping () async -> (summary: WeekReviewSummary?, isNewAnalysis: Bool)
+    ) async -> (summary: WeekReviewSummary?, isNewAnalysis: Bool) {
+        await withTaskGroup(of: (summary: WeekReviewSummary?, isNewAnalysis: Bool)?.self) { group in
+            group.addTask { await work() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return (nil, false)
+            }
+            // First non-nil result wins; cancel the rest.
+            for await result in group {
+                if let r = result {
+                    group.cancelAll()
+                    return r
+                }
+            }
+            return (nil, false)
+        }
     }
 }

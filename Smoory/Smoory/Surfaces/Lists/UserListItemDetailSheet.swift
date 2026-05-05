@@ -94,7 +94,11 @@ struct UserListItemDetailSheet: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 480, height: 560)
+        // UI audit fix #10: previously fixed at 560 height, which clipped long
+        // notes. Use minHeight + an upper bound so short items don't waste space
+        // and long ones can grow until the OS sheet ceiling.
+        .frame(width: 480)
+        .frame(minHeight: 480, idealHeight: 560, maxHeight: 800)
     }
 
     private func save() {
