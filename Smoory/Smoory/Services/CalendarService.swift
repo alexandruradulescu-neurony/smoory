@@ -193,6 +193,33 @@ final class CalendarService {
         }
     }
 
+    /// All calendars EventKit knows about that the user can read events from.
+    /// Subscribed read-only calendars are included — they're useful for the read
+    /// filter even though they can't be written to.
+    func listAvailableCalendars() -> [EKCalendar] {
+        store.calendars(for: .event).sorted { $0.title < $1.title }
+    }
+
+    /// Calendars the user can write events to. Filters out subscribed/read-only
+    /// calendars so the Settings picker only offers valid write targets.
+    func listWritableCalendars() -> [EKCalendar] {
+        store.calendars(for: .event)
+            .filter { $0.allowsContentModifications }
+            .sorted { $0.title < $1.title }
+    }
+
+    /// Resolves the configured "Smoory writes here" calendar. Falls back to the
+    /// system default. Returns nil only if the user has zero writable calendars.
+    func writableCalendar() -> EKCalendar? {
+        let configuredID = UserDefaults.standard.string(forKey: DefaultsKey.writableCalendarID)
+        if let configuredID, !configuredID.isEmpty,
+           let match = store.calendar(withIdentifier: configuredID),
+           match.allowsContentModifications {
+            return match
+        }
+        return store.defaultCalendarForNewEvents
+    }
+
     private static func toCalendarEvent(_ ek: EKEvent) -> CalendarEvent {
         let location = ek.location.flatMap { $0.isEmpty ? nil : $0 }
         return CalendarEvent(
