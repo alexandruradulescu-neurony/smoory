@@ -331,6 +331,23 @@ final class CalendarService {
         return target
     }
 
+    /// Removes an event. For recurring events, `scope` selects which occurrence(s)
+    /// disappear. Mirrors `moveEvent`'s scope handling.
+    func deleteEvent(eventID: String, scope: CalendarEventScope) async throws {
+        try await ensureAccess()
+        guard let event = store.event(withIdentifier: eventID) else {
+            throw CalendarServiceError.unknown(
+                NSError(
+                    domain: "CalendarService",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "Event not found: \(eventID)"]
+                )
+            )
+        }
+        let target = try resolveTargetEvent(for: event, scope: scope)
+        try store.remove(target, span: scope.ekSpan, commit: true)
+    }
+
     /// Walks back to the first occurrence of a recurring series. For non-recurring
     /// events this returns the event unchanged.
     private func resolveTargetEvent(
