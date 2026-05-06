@@ -40,7 +40,6 @@ struct ContentView: View {
             ZStack(alignment: .top) {
                 switch resolvedSelection {
                 case .feed: FeedView()
-                case .todos: TodosView()
                 case .lists: ListsView()
                 case .chat: ChatView()
                 case .memory: MemoryView()

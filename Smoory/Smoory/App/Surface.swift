@@ -2,7 +2,6 @@ import SwiftUI
 
 enum Surface: String, CaseIterable, Identifiable {
     case feed
-    case todos
     case lists
     case chat
     case memory
@@ -13,7 +12,6 @@ enum Surface: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .feed: "Feed"
-        case .todos: "Todos"
         case .lists: "Lists"
         case .chat: "Chat"
         case .memory: "Memory"
@@ -24,7 +22,6 @@ enum Surface: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .feed: "tray"
-        case .todos: "checklist"
         case .lists: "list.bullet.rectangle"
         case .chat: "bubble.left.and.bubble.right"
         case .memory: "brain"
