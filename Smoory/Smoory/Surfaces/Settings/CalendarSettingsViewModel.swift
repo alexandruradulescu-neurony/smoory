@@ -42,6 +42,10 @@ final class CalendarSettingsViewModel {
         startObservingStoreChanges()
     }
 
+    /// `@MainActor` is required on the deinit because `observationTask` is an
+    /// actor-isolated stored property; plain `deinit` errors with "main
+    /// actor-isolated property cannot be referenced from a nonisolated context"
+    /// on this Swift toolchain. Verified with build.
     @MainActor deinit {
         observationTask?.cancel()
     }
