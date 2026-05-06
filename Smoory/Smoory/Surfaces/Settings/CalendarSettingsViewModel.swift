@@ -27,9 +27,7 @@ final class CalendarSettingsViewModel {
     }
 
     private let calendarService: CalendarService
-    // nonisolated(unsafe) lets deinit (which is nonisolated) cancel the task
-    // without triggering the main-actor isolation error.
-    nonisolated(unsafe) private var observationTask: Task<Void, Never>?
+    private var observationTask: Task<Void, Never>?
 
     init(calendarService: CalendarService) {
         self.calendarService = calendarService
@@ -44,7 +42,7 @@ final class CalendarSettingsViewModel {
         startObservingStoreChanges()
     }
 
-    deinit {
+    @MainActor deinit {
         observationTask?.cancel()
     }
 
