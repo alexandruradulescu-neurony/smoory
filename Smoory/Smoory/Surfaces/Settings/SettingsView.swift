@@ -22,6 +22,7 @@ struct SettingsView: View {
         placeholder: "pa-…"
     )
     @State private var providerVM = ProviderViewModel()
+    @State private var calendarServiceForSettings = CalendarService()
 
     @Environment(\.chatViewModel) private var chatViewModel
     @Environment(\.scheduledActionService) private var scheduledActionService
@@ -115,6 +116,8 @@ struct SettingsView: View {
             }
 
             remindersSyncSection
+
+            CalendarSettingsSection(calendarService: calendarServiceForSettings)
 
             timeOffSection
 
