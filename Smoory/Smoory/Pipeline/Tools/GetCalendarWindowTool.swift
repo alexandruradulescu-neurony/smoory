@@ -31,6 +31,7 @@ enum GetCalendarWindowTool: Tool {
     }
 
     private struct EventPayload: Encodable {
+        let id: String             // EKEvent.eventIdentifier — required by move/delete tools
         let title: String
         let start: String          // ISO 8601 with local timezone offset
         let end: String
@@ -72,6 +73,7 @@ enum GetCalendarWindowTool: Tool {
 
         let payload = filtered.map { event in
             EventPayload(
+                id: event.id,
                 title: event.title,
                 start: event.start.formatted(Self.localISO),
                 end: event.end.formatted(Self.localISO),

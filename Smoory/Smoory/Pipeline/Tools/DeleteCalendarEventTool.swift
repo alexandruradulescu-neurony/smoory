@@ -30,6 +30,10 @@ enum DeleteCalendarEventTool: Tool {
                 type: "string",
                 description: "EKEvent identifier from get_calendar_window."
             ),
+            "event_title": ToolInputSchemaProperty(
+                type: "string",
+                description: "Optional event title for the confirmation card. Pass it from the same get_calendar_window result you took the event_id from so the user sees a human-readable label instead of the raw identifier."
+            ),
             "scope": ToolInputSchemaProperty(
                 type: "string",
                 description: "single | following | all. Default: single."
@@ -40,6 +44,7 @@ enum DeleteCalendarEventTool: Tool {
 
     struct Input: Codable {
         let event_id: String
+        let event_title: String?
         let scope: String?
     }
 
@@ -80,10 +85,19 @@ enum DeleteCalendarEventTool: Tool {
         case "following": scopeBadge = "This and following (irreversible)"
         default: scopeBadge = "Just this occurrence (irreversible)"
         }
+        // Prefer the human-readable title for the confirmation card; fall back
+        // to the raw EKEvent identifier so the user at least has *something*
+        // when the LLM forgets to pass `event_title`.
+        let primary: String
+        if let title = input.event_title, !title.trimmingCharacters(in: .whitespaces).isEmpty {
+            primary = title
+        } else {
+            primary = input.event_id
+        }
         return ProposedActionSummary(
             icon: "calendar.badge.minus",
             title: "Delete event",
-            primary: input.event_id,
+            primary: primary,
             secondary: scopeBadge
         )
     }
