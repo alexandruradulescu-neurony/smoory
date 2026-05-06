@@ -30,6 +30,13 @@ enum CalendarServiceError: Error {
 
 @MainActor
 final class CalendarService {
+    /// Centralizes the AppStorage keys this service reads, so the Settings VM and
+    /// the service agree on the storage location without one importing the other.
+    enum DefaultsKey {
+        static let writableCalendarID = "calendar.writableCalendarID"
+        static let excludedCalendarIDs = "calendar.excludedCalendarIDs"
+    }
+
     // Heuristic starting points — tune after living with the behavior.
     private static let secondDayThresholdHour = 12   // before noon → today only
     private static let thirdDayThresholdHour = 15    // 12:00–15:00 → +tomorrow; 15:00+ → +day-after-tomorrow
@@ -84,7 +91,14 @@ final class CalendarService {
             return CalendarWindow(days: [])
         }
 
-        let predicate = store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: nil)
+        let allCalendars = store.calendars(for: .event)
+        let excludedIDs = Self.readExcludedCalendarIDs()
+        let included = allCalendars.filter { !excludedIDs.contains($0.calendarIdentifier) }
+        let predicate = store.predicateForEvents(
+            withStart: windowStart,
+            end: windowEnd,
+            calendars: included.isEmpty ? nil : included   // nil = all calendars
+        )
         let events = store.events(matching: predicate).map(Self.toCalendarEvent)
 
         var days: [CalendarWindow.Day] = []
@@ -190,5 +204,12 @@ final class CalendarService {
             calendarName: ek.calendar.title,
             isAllDay: ek.isAllDay
         )
+    }
+
+    private static func readExcludedCalendarIDs() -> Set<String> {
+        guard let data = UserDefaults.standard.data(forKey: DefaultsKey.excludedCalendarIDs),
+              let array = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+        return Set(array)
     }
 }
