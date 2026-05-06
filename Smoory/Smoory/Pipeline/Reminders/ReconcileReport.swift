@@ -6,6 +6,7 @@ import Foundation
 struct ReconcileReport: Sendable {
     let listsImportedFromEK: Int       // EK calendars new to Smoory this pass
     let listsPushedToEK: Int           // Smoory lists that had no EK pair, now created in EK
+    let listsArchivedOnEKDeletion: Int // Smoory lists archived because their EK calendar was deleted in Reminders.app
     let listsRenamed: Int              // titles propagated either direction
     let itemsImportedFromEK: Int       // EK reminders new to Smoory
     let itemsPushedToEK: Int           // Smoory items new to EK
@@ -17,6 +18,7 @@ struct ReconcileReport: Sendable {
     static let empty = ReconcileReport(
         listsImportedFromEK: 0,
         listsPushedToEK: 0,
+        listsArchivedOnEKDeletion: 0,
         listsRenamed: 0,
         itemsImportedFromEK: 0,
         itemsPushedToEK: 0,
@@ -29,6 +31,7 @@ struct ReconcileReport: Sendable {
     var isNoOp: Bool {
         listsImportedFromEK == 0
             && listsPushedToEK == 0
+            && listsArchivedOnEKDeletion == 0
             && listsRenamed == 0
             && itemsImportedFromEK == 0
             && itemsPushedToEK == 0
@@ -41,6 +44,7 @@ struct ReconcileReport: Sendable {
         var parts: [String] = []
         if listsImportedFromEK > 0 { parts.append("imported \(listsImportedFromEK) list(s)") }
         if listsPushedToEK > 0 { parts.append("pushed \(listsPushedToEK) list(s) to Reminders") }
+        if listsArchivedOnEKDeletion > 0 { parts.append("archived \(listsArchivedOnEKDeletion) list(s) deleted in Reminders") }
         if listsRenamed > 0 { parts.append("renamed \(listsRenamed) list(s)") }
         if itemsImportedFromEK > 0 { parts.append("imported \(itemsImportedFromEK) item(s)") }
         if itemsPushedToEK > 0 { parts.append("pushed \(itemsPushedToEK) item(s)") }
@@ -55,6 +59,7 @@ struct ReconcileReport: Sendable {
 struct ReconcileReportBuilder {
     var listsImportedFromEK = 0
     var listsPushedToEK = 0
+    var listsArchivedOnEKDeletion = 0
     var listsRenamed = 0
     var itemsImportedFromEK = 0
     var itemsPushedToEK = 0
@@ -66,6 +71,7 @@ struct ReconcileReportBuilder {
         ReconcileReport(
             listsImportedFromEK: listsImportedFromEK,
             listsPushedToEK: listsPushedToEK,
+            listsArchivedOnEKDeletion: listsArchivedOnEKDeletion,
             listsRenamed: listsRenamed,
             itemsImportedFromEK: itemsImportedFromEK,
             itemsPushedToEK: itemsPushedToEK,

@@ -24,6 +24,8 @@ struct CalendarEvent: Identifiable, Hashable, Sendable {
     let location: String?
     let calendarName: String
     let isAllDay: Bool
+    let notes: String?          // event description / meeting body — often where Zoom links live
+    let url: URL?               // optional event URL — sometimes the meeting link itself
 }
 
 struct CalendarWindow: Sendable, Hashable {
@@ -380,6 +382,7 @@ final class CalendarService {
 
     private static func toCalendarEvent(_ ek: EKEvent) -> CalendarEvent {
         let location = ek.location.flatMap { $0.isEmpty ? nil : $0 }
+        let notes = ek.notes.flatMap { $0.isEmpty ? nil : $0 }
         return CalendarEvent(
             id: ek.eventIdentifier ?? UUID().uuidString,
             title: ek.title ?? "",
@@ -387,7 +390,9 @@ final class CalendarService {
             end: ek.endDate,
             location: location,
             calendarName: ek.calendar.title,
-            isAllDay: ek.isAllDay
+            isAllDay: ek.isAllDay,
+            notes: notes,
+            url: ek.url
         )
     }
 

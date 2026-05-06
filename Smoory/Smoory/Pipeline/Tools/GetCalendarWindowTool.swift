@@ -38,6 +38,8 @@ enum GetCalendarWindowTool: Tool {
         let location: String?
         let isAllDay: Bool
         let calendarName: String
+        let notes: String?         // event description / meeting body — Zoom/Meet links live here
+        let url: String?           // optional event URL — sometimes the meeting link itself
     }
 
     /// ISO 8601 in the user's local timezone so wall-clock times round-trip the LLM
@@ -79,7 +81,9 @@ enum GetCalendarWindowTool: Tool {
                 end: event.end.formatted(Self.localISO),
                 location: event.location,
                 isAllDay: event.isAllDay,
-                calendarName: event.calendarName
+                calendarName: event.calendarName,
+                notes: event.notes,
+                url: event.url?.absoluteString
             )
         }
 

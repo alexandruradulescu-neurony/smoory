@@ -202,11 +202,26 @@ final class RemindersSyncService {
         var ekUnpaired = ekCalendars
 
         for list in smooryLists {
-            if let eid = list.eventKitIdentifier,
-               let idx = ekUnpaired.firstIndex(where: { $0.calendarIdentifier == eid }) {
-                pairs.append((list, ekUnpaired[idx]))
-                ekUnpaired.remove(at: idx)
+            if let eid = list.eventKitIdentifier {
+                if let idx = ekUnpaired.firstIndex(where: { $0.calendarIdentifier == eid }) {
+                    // Found the paired EK calendar.
+                    pairs.append((list, ekUnpaired[idx]))
+                    ekUnpaired.remove(at: idx)
+                } else {
+                    // Smoory list previously synced (has eventKitIdentifier) but the
+                    // EK calendar is gone — user deleted it in Reminders.app. Per
+                    // LWW + Reminders-as-source-of-truth, archive the Smoory list
+                    // instead of recreating the EK calendar (the previous behavior
+                    // re-imported the list onto Reminders within seconds of delete).
+                    let now = Date()
+                    list.isArchived = true
+                    list.archivedAt = now
+                    list.updatedAt = now
+                    list.eventKitIdentifier = nil
+                    report.listsArchivedOnEKDeletion += 1
+                }
             } else {
+                // Never paired — Smoory-only list. Push to EK as a new calendar.
                 smooryUnpaired.append(list)
             }
         }
