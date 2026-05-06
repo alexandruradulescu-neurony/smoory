@@ -220,6 +220,35 @@ final class CalendarService {
         return store.defaultCalendarForNewEvents
     }
 
+    /// Returns events overlapping `start..<end` from non-excluded calendars,
+    /// optionally skipping a specific event id (used by `move_calendar_event`
+    /// so the event being moved isn't reported as overlapping itself).
+    func findConflicts(
+        start: Date,
+        end: Date,
+        excludingEventID: String? = nil
+    ) async throws -> [CalendarEvent] {
+        try await ensureAccess()
+        let allCalendars = store.calendars(for: .event)
+        let excludedIDs = Self.readExcludedCalendarIDs()
+        let included = allCalendars.filter { !excludedIDs.contains($0.calendarIdentifier) }
+        let predicate = store.predicateForEvents(
+            withStart: start,
+            end: end,
+            calendars: included.isEmpty ? nil : included
+        )
+        let raw = store.events(matching: predicate)
+        return raw
+            .filter { event in
+                // The predicate is inclusive on both ends; trim equal-edge events
+                // (a 14:00–15:00 event isn't a conflict for a 15:00–16:00 block).
+                event.startDate < end && event.endDate > start
+            }
+            .filter { $0.eventIdentifier != excludingEventID }
+            .map(Self.toCalendarEvent)
+            .sorted { $0.start < $1.start }
+    }
+
     private static func toCalendarEvent(_ ek: EKEvent) -> CalendarEvent {
         let location = ek.location.flatMap { $0.isEmpty ? nil : $0 }
         return CalendarEvent(
