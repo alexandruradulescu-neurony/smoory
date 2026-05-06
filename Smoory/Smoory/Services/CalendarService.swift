@@ -249,6 +249,46 @@ final class CalendarService {
             .sorted { $0.start < $1.start }
     }
 
+    struct CreateEventInput {
+        let title: String
+        let start: Date
+        let end: Date
+        let isAllDay: Bool
+        let location: String?
+        let notes: String?
+        let recurrence: EKRecurrenceRule?      // already converted by the caller
+    }
+
+    /// Saves a new event to `writableCalendar()`. Throws when the user has no
+    /// writable calendars or EventKit save fails. Caller is responsible for
+    /// resolving relative time phrases via ScheduledActionTimeResolver.
+    @discardableResult
+    func createEvent(_ input: CreateEventInput) async throws -> EKEvent {
+        try await ensureAccess()
+        guard let calendar = writableCalendar() else {
+            throw CalendarServiceError.unknown(
+                NSError(
+                    domain: "CalendarService",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "No writable calendar available. Pick one in Settings."]
+                )
+            )
+        }
+        let event = EKEvent(eventStore: store)
+        event.calendar = calendar
+        event.title = input.title
+        event.startDate = input.start
+        event.endDate = input.end
+        event.isAllDay = input.isAllDay
+        event.location = input.location
+        event.notes = input.notes
+        if let rule = input.recurrence {
+            event.addRecurrenceRule(rule)
+        }
+        try store.save(event, span: .thisEvent, commit: true)
+        return event
+    }
+
     private static func toCalendarEvent(_ ek: EKEvent) -> CalendarEvent {
         let location = ek.location.flatMap { $0.isEmpty ? nil : $0 }
         return CalendarEvent(
