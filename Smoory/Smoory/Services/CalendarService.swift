@@ -2,6 +2,20 @@ import EventKit
 import Foundation
 import WidgetKit
 
+/// Maps the LLM-facing scope string to an EKSpan and a target-event resolver.
+enum CalendarEventScope: String {
+    case single
+    case following
+    case all
+
+    var ekSpan: EKSpan {
+        switch self {
+        case .single: return .thisEvent
+        case .following, .all: return .futureEvents
+        }
+    }
+}
+
 struct CalendarEvent: Identifiable, Hashable, Sendable {
     let id: String              // EKEvent.eventIdentifier
     let title: String
@@ -287,6 +301,57 @@ final class CalendarService {
         }
         try store.save(event, span: .thisEvent, commit: true)
         return event
+    }
+
+    /// Moves an event to a new start/end. For recurring events, `scope` selects
+    /// which occurrence(s) shift. Returns the (possibly different) target EKEvent
+    /// that EventKit acted on — for `scope == .all`, this is the first occurrence
+    /// of the series.
+    @discardableResult
+    func moveEvent(
+        eventID: String,
+        scope: CalendarEventScope,
+        newStart: Date,
+        newEnd: Date
+    ) async throws -> EKEvent {
+        try await ensureAccess()
+        guard let event = store.event(withIdentifier: eventID) else {
+            throw CalendarServiceError.unknown(
+                NSError(
+                    domain: "CalendarService",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Event not found: \(eventID)"]
+                )
+            )
+        }
+        let target = try resolveTargetEvent(for: event, scope: scope)
+        target.startDate = newStart
+        target.endDate = newEnd
+        try store.save(target, span: scope.ekSpan, commit: true)
+        return target
+    }
+
+    /// Walks back to the first occurrence of a recurring series. For non-recurring
+    /// events this returns the event unchanged.
+    private func resolveTargetEvent(
+        for event: EKEvent,
+        scope: CalendarEventScope
+    ) throws -> EKEvent {
+        switch scope {
+        case .single, .following:
+            return event
+        case .all:
+            // EKEvent doesn't expose the series root directly. The convention is to
+            // re-fetch by identifier; for occurrences EventKit returns the event
+            // representing the date you queried. Walk back via `firstOccurrence`
+            // when available; if not, fall through to the event itself with
+            // `.futureEvents` span — which captures everything from now forward.
+            if event.hasRecurrenceRules,
+               let first = event.value(forKey: "firstOccurrence") as? EKEvent {
+                return first
+            }
+            return event
+        }
     }
 
     private static func toCalendarEvent(_ ek: EKEvent) -> CalendarEvent {
