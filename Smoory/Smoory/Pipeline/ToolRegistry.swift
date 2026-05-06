@@ -31,6 +31,9 @@ enum ToolRegistry {
         UpdateListItemTool.self,
         GetOffPeriodsTool.self,
         CompleteEndOfDayTool.self,
+        CreateCalendarEventTool.self,
+        MoveCalendarEventTool.self,
+        DeleteCalendarEventTool.self,
     ]
 
     static func tool(named name: String) -> (any Tool.Type)? {
