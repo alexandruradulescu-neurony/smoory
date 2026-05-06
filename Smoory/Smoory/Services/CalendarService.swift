@@ -348,6 +348,13 @@ final class CalendarService {
         try store.remove(target, span: scope.ekSpan, commit: true)
     }
 
+    /// Direct EKEvent fetch by identifier. Used by tools to read the original
+    /// event before move/delete (so we can compute preserved duration, etc.).
+    func eventForIdentifier(_ id: String) async throws -> EKEvent? {
+        try await ensureAccess()
+        return store.event(withIdentifier: id)
+    }
+
     /// Walks back to the first occurrence of a recurring series. For non-recurring
     /// events this returns the event unchanged.
     private func resolveTargetEvent(
